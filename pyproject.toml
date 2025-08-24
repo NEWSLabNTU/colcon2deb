@@ -1,0 +1,60 @@
+[project]
+name = "colcon2deb"
+version = "0.1.0"
+description = "Build Debian packages for Autoware in isolated Docker containers"
+authors = [
+    { name = "Autoware Foundation", email = "contact@autoware.org" }
+]
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "docker>=6.0.0",
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+colcon2deb = "colcon2deb:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+    "build>=1.3.0",
+]
+
+[tool.hatch.build]
+sources = {"" = "."}
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "colcon2deb.py",
+    "helper/**/*",
+    "config/**/*",
+    "docker/**/*",
+    "examples/**/*",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "colcon2deb.py",
+    "helper/**/*",
+    "config/**/*",
+    "docker/**/*",
+    "examples/**/*",
+    "README.md",
+    "LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
