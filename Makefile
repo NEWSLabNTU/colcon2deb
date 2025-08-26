@@ -48,8 +48,9 @@ setup-apt:
 
 deb: wheel setup-apt
 	@echo "Building Debian package with makedeb..."
+	@rm -f makedeb/*.deb makedeb/*.whl
 	@cp dist/colcon2deb-$(VERSION)-py3-none-any.whl makedeb/
 	@cd makedeb && makedeb
 	@mkdir -p dist
-	@cp makedeb/*.deb dist/
+	@cp makedeb/colcon2deb_$(VERSION)-1_all.deb dist/
 	@echo "Debian package created successfully!"
