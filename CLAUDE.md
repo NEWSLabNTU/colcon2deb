@@ -11,26 +11,26 @@ This project builds Debian packages for Autoware (autonomous driving platform) i
 
 The output is Debian packages in a specified output directory that can be installed or assembled into an APT repository.
 
-**Package Management**: The project uses Rye for Python dependency management and package building.
+**Package Management**: The project uses uv for Python dependency management and package building.
 
 ## Key Commands
 
 ### Package Installation and Development
 ```bash
-# Install Rye (if not already installed)
-curl -sSf https://rye.astral.sh/get | bash
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Set up development environment
-rye sync
+uv sync
 
 # Build the project wheel
-rye build --wheel
+uv build --wheel
 
 # Build Debian package
 make deb
 
 # Install the Debian package
-sudo dpkg -i dist/colcon2deb_0.1.0-1_all.deb
+sudo dpkg -i dist/colcon2deb_0.2.0-1_all.deb
 ```
 
 ### Build Debian Packages for Autoware
@@ -61,12 +61,12 @@ docker build -t colcon2deb:0.45.1-jetpack docker/0.45.1/jetpack-6.0/
 
 ### Testing
 ```bash
-# Run tests with Rye
-rye run pytest tests/
-rye run pytest tests/ --cov
+# Run tests with uv
+uv run pytest tests/
+uv run pytest tests/ --cov
 
 # Specific test files
-rye run pytest tests/unit/test_colcon2deb.py
+uv run pytest tests/unit/test_colcon2deb.py
 ```
 
 ## Architecture
@@ -103,7 +103,7 @@ rye run pytest tests/unit/test_colcon2deb.py
   - `script-execution-model.md` - How scripts execute
   - `troubleshooting-guide.md` - Common issues and solutions
   - `parallel-optimization.md` - Performance tuning
-- `pyproject.toml` - Rye/Python project configuration
+- `pyproject.toml` - Python project configuration (uv compatible)
 - `Makefile` - Build automation (wheel, deb, clean)
 
 ### Build Process Flow
@@ -127,20 +127,20 @@ rye run pytest tests/unit/test_colcon2deb.py
 
 ## Testing
 
-**IMPORTANT: This project uses Rye for dependency management.**
+**IMPORTANT: This project uses uv for dependency management.**
 
 ```bash
 # Run all tests
-rye run pytest tests/
+uv run pytest tests/
 
 # Run with coverage
-rye run pytest tests/ --cov
+uv run pytest tests/ --cov
 
 # Run specific test file
-rye run pytest tests/unit/test_colcon2deb.py
+uv run pytest tests/unit/test_colcon2deb.py
 
 # Run tests in verbose mode
-rye run pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ## Important Files
@@ -213,11 +213,12 @@ sudo dpkg -i dist/colcon2deb_0.1.0-1_all.deb
 - Must install libpcl-dev, libopencv-dev, python3-xmlschema
 - Autoware setup script must be run with appropriate flags
 
-### Rye and Virtual Environment
+### uv and Virtual Environment
 - apt_pkg module not available via pip (system package only)
 - Use `make setup-apt` to link system apt packages into venv
 - makedeb requires apt_pkg for dependency checking
 - PKGBUILD uses `arch=('all')` for architecture-independent package
+- uv is significantly faster than pip and rye for dependency resolution
 
 ## Configuration File Format
 
