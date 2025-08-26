@@ -1,7 +1,7 @@
 .PHONY: default prepare build save tarball clean deb
 
 IMAGE_NAME = autoware_rosdebian_builder
-VERSION = 0.1.0
+VERSION = 0.2.0
 
 default:
 	@echo 'Usage:'

@@ -2,7 +2,7 @@
 # Maintainer: Autoware Foundation <contact@autoware.org>
 
 pkgname=colcon2deb
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Build Debian packages for Autoware in isolated Docker containers"
 arch=('all')
@@ -26,7 +26,7 @@ makedepends=(
 
 source=(
     'colcon2deb'
-    'colcon2deb-0.1.0-py3-none-any.whl'
+    "colcon2deb-${pkgver}-py3-none-any.whl"
 )
 sha256sums=(
     'SKIP'
