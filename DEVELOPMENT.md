@@ -1,235 +1,302 @@
 # Development Guide
 
-This guide is for developers and contributors working on colcon2deb.
-
-## Building from Source
-
-### Quick Build and Install
-
-```bash
-# Clone the repository
-git clone https://github.com/NEWSLabNTU/colcon2deb.git
-cd colcon2deb
-
-# Build and install the Debian package
-make deb
-sudo dpkg -i colcon2deb_*.deb
-```
+This guide covers development setup, testing, building, and contributing to colcon2deb.
 
 ## Development Setup
 
 ### Prerequisites
 
-- Python 3.8+
-- Docker
-- makedeb (for building packages)
-- Git
+- Python >= 3.10
+- uv (package management)
+- Docker or Docker CE
+- makedeb (for building Debian packages)
 
-### Clone and Setup
+### Setting Up Development Environment
 
+1. **Install uv** (if not already installed):
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+2. **Clone the repository**:
 ```bash
 git clone https://github.com/NEWSLabNTU/colcon2deb.git
 cd colcon2deb
-
-# Create a virtual environment (optional but recommended)
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install pyyaml
 ```
 
-## Running from Source
-
-When developing, you can run colcon2deb directly from source:
-
+3. **Set up the environment**:
 ```bash
-./colcon2deb.py --workspace /path/to/workspace --config config.yaml
+uv sync
 ```
 
-The script automatically detects whether it's running from an installed location or source directory.
-
-## Building Packages
-
-### Using makedeb
-
-If you have makedeb installed, you can build the Debian package directly:
-
+4. **Link system packages** (for apt_pkg):
 ```bash
-makedeb -si
-```
-
-This will:
-- Build the package (`-s` syncs dependencies)
-- Install the package (`-i` installs after building)
-
-### Using Make
-
-The Makefile provides several useful targets:
-
-```bash
-# Create source tarball
-make tarball
-
-# Build Debian package (creates tarball first)
-make deb
-
-# Clean build artifacts
-make clean
+make setup-apt
 ```
 
 ## Project Structure
 
 ```
 colcon2deb/
-├── colcon2deb.py       # Main Python script
-├── helper/             # Bash scripts that run inside Docker
-│   ├── main.sh         # Main orchestrator script
-│   ├── prepare.sh      # Prepare build environment
-│   ├── copy-src.sh     # Copy source files
-│   ├── install-deps.sh # Install dependencies
-│   ├── build-src.sh    # Build with colcon
-│   └── ...             # Other build scripts
-├── example/            # Example configuration
-│   ├── config.yaml     # Example config file
-│   └── config/         # Example package configs
-├── docker/             # Dockerfiles (submodule)
-├── makedeb/            # makedeb packaging files
-│   ├── PKGBUILD       # Package definition
-│   ├── colcon2deb-wrapper.py  # Wrapper script
-│   └── README-package.md       # Package documentation
-└── Makefile           # Build automation
+├── colcon2deb.py           # Main CLI entry point
+├── helper/                 # Container-side build scripts
+│   ├── entry.sh            # Docker container entry point
+│   ├── main.sh             # Build orchestrator
+│   ├── prepare.sh          # Initialize directories
+│   ├── copy-src.sh         # Copy source to build area
+│   ├── install-deps.sh     # Install dependencies via rosdep
+│   ├── build-src.sh        # Compile with colcon
+│   ├── create-rosdep-list.sh    # Generate custom rosdep mappings
+│   ├── create-package-list.sh   # List packages to build
+│   ├── generate-debian-dir.sh   # Create Debian metadata with bloom
+│   └── build-deb.sh        # Build .deb packages
+├── config/                 # Package-specific Debian templates
+├── docker/                 # Dockerfiles for different platforms
+├── examples/               # Example configurations with build scripts
+├── makedeb/                # Debian package build configuration
+│   ├── PKGBUILD            # Package build script
+│   └── colcon2deb          # Wrapper script for /usr/bin
+├── tests/                  # Test suite
+├── doc/                    # Documentation
+├── pyproject.toml          # Python project configuration
+├── Makefile                # Build automation
+└── CLAUDE.md               # AI assistant guidelines
 ```
 
-## Code Architecture
+## Running Tests
 
-### Main Script (colcon2deb.py)
+### Basic Testing
 
-The main script handles:
-1. Command-line argument parsing
-2. Configuration file loading and validation
-3. Docker image management (build/pull)
-4. Container execution with proper mounts
+```bash
+# Run all tests
+uv run pytest tests/
 
-Note: In the installed package, colcon2deb.py is placed in `/usr/share/colcon2deb/` along with the helper scripts, and a wrapper script is created at `/usr/bin/colcon2deb`.
+# Run with coverage
+uv run pytest tests/ --cov
 
-### Helper Scripts
+# Run specific test file
+uv run pytest tests/unit/test_colcon2deb.py
 
-Helper scripts run inside the Docker container and handle:
-- Source preparation
-- Dependency installation
-- Package building
-- Debian file generation
-- Package creation
+# Run tests in verbose mode
+uv run pytest tests/ -v
 
-### Configuration
+# Run tests with output
+uv run pytest tests/ -s
+```
 
-Configuration is handled through YAML files with schema validation:
-- `version`: Config format version
-- `docker`: Docker image/Dockerfile settings
-- `output`: Output directory for .deb files
-- `packages`: Directory with custom Debian configs
-- `build`: Build options (ROS distro, parallelism, etc.)
+### Testing During Development
 
-## Testing
+```bash
+# Run colcon2deb from development environment
+uv run colcon2deb --help
 
-### Manual Testing
+# Test with example configuration
+uv run colcon2deb --workspace /path/to/workspace --config examples/autoware-0.45.1-amd64/config.yaml
+```
 
-1. Create a test workspace with a simple ROS package
-2. Create a test configuration
-3. Run colcon2deb and verify output
+## Building the Project
 
-### Integration Testing
+### Building Python Wheel
 
-Test with real workspaces:
-- Small ROS 2 workspace
-- Autoware (large workspace)
-- Custom packages with specific dependencies
+```bash
+# Build wheel package
+make wheel
+# or directly with uv
+uv build --wheel
+```
+
+### Building Debian Package
+
+```bash
+# Build Debian package (includes wheel build)
+make deb
+
+# The package will be created in dist/
+ls -la dist/colcon2deb_0.2.0-1_all.deb
+```
+
+### Clean Build Artifacts
+
+```bash
+# Clean all build artifacts
+make clean
+```
+
+## Development Workflow
+
+### Adding New Features
+
+1. Create a feature branch
+2. Make changes to the code
+3. Add/update tests as needed
+4. Run tests to ensure nothing breaks
+5. Build and test the package locally
+6. Submit a pull request
+
+### Modifying Build Scripts
+
+#### Host-side Changes
+- Edit `colcon2deb.py` for main CLI logic
+- Update `pyproject.toml` for dependencies
+- Modify `Makefile` for build automation
+
+#### Container-side Changes
+- Edit scripts in `helper/` directory
+- Test changes by running builds with your modifications
+- Ensure scripts work in Docker environment
+
+#### Docker Images
+- Edit Dockerfiles in `docker/` directory
+- Test with different architectures as needed
+- Update examples if Docker configuration changes
+
+### Adding Package Overrides
+
+1. Create directory: `config/<package_name>/debian/`
+2. Add necessary files:
+   - `control` - Package metadata
+   - `rules` - Build rules
+   - `changelog` - Version history
+   - `shlibs.local` - Dependency mappings (if needed)
+3. Test the override with a build
+
+## Code Style and Standards
+
+### Python Code
+- Follow PEP 8 style guidelines
+- Use type hints where appropriate
+- Add docstrings to functions and classes
+- Keep functions focused and single-purpose
+
+### Shell Scripts
+- Use `set -e` for error handling
+- Add comments for complex logic
+- Use meaningful variable names
+- Follow consistent indentation (2 spaces)
+
+### Documentation
+- Update README.md for user-facing changes
+- Update DEVELOPMENT.md for development changes
+- Keep CLAUDE.md current for AI assistance
+- Add inline comments for complex code
+
+## Debugging
+
+### Debug Output
+
+```bash
+# Enable verbose output in colcon2deb
+# (Add debug prints to colcon2deb.py as needed)
+
+# Check Docker container logs
+docker logs <container_id>
+
+# Run helper scripts manually in container
+docker run -it --rm \
+  -v /path/to/workspace:/workspace:ro \
+  -v /path/to/output:/output \
+  <image_name> \
+  /bin/bash
+```
+
+### Common Issues
+
+#### apt_pkg Module Not Found
+```bash
+# Link system package to virtual environment
+make setup-apt
+```
+
+#### Docker Permission Issues
+```bash
+# Add user to docker group
+sudo usermod -aG docker $USER
+# Log out and back in for changes to take effect
+```
+
+#### Build Failures
+- Check Docker image has all dependencies
+- Verify workspace structure is correct
+- Review logs in output directory
+- Test with simpler packages first
+
+## Testing Package Installation
+
+```bash
+# Build the package
+make deb
+
+# Install locally
+sudo dpkg -i dist/colcon2deb_0.2.0-1_all.deb
+
+# Test the installed command
+colcon2deb --help
+
+# Uninstall if needed
+sudo apt remove colcon2deb
+```
 
 ## Contributing
 
-### Code Style
+### Before Submitting
 
-- Python: Follow PEP 8
-- Bash: Use shellcheck for linting
-- YAML: 2-space indentation
+1. **Test your changes**:
+   - Run the test suite
+   - Build the package
+   - Test with real workspaces
 
-### Pull Request Process
+2. **Update documentation**:
+   - Update relevant .md files
+   - Add/update code comments
+   - Update CHANGELOG if significant
 
-1. Fork the repository
-2. Create a feature branch
-3. Make changes and test
-4. Submit PR with clear description
-5. Ensure CI passes
+3. **Check code quality**:
+   - Ensure consistent style
+   - Remove debug prints
+   - Check for security issues
 
-### Adding Features
+### Pull Request Guidelines
 
-When adding new features:
-1. Update configuration schema if needed
-2. Add documentation to README.md
-3. Update example configuration
-4. Test with various workspaces
+- Create focused, single-purpose PRs
+- Write clear commit messages
+- Include test cases for new features
+- Update documentation as needed
+- Ensure CI passes (if configured)
 
 ## Release Process
 
 1. Update version in:
-   - `PKGBUILD` (pkgver)
-   - `Makefile` (VERSION)
-   - Any other version references
+   - `pyproject.toml`
+   - `Makefile`
+   - `makedeb/PKGBUILD`
 
-2. Create release commit:
+2. Update RELEASE.md with changes
+
+3. Build and test the package
+
+4. Create git tag:
    ```bash
-   git commit -m "Release v0.1.0"
-   git tag v0.1.0
+   git tag v0.2.0
+   git push origin v0.2.0
    ```
 
-3. Build release package:
-   ```bash
-   make clean
-   make deb
-   ```
+5. Upload package to GitHub releases
 
-4. Create GitHub release with:
-   - Release notes (use RELEASE.md as template)
-   - Upload .deb package
-   - Upload source tarball
+## Additional Resources
 
-## Debugging
+- [CLAUDE.md](CLAUDE.md) - AI assistant guidelines
+- [README.md](README.md) - User documentation
+- [Docker Documentation](https://docs.docker.com/)
+- [uv Documentation](https://docs.astral.sh/uv/)
+- [ROS 2 Documentation](https://docs.ros.org/en/humble/)
 
-### Debug Docker Issues
+## Support
 
-```bash
-# Run container interactively
-docker run -it --rm \
-  -v /path/to/workspace:/mount \
-  -v /path/to/config:/config \
-  -v /path/to/helper:/helper \
-  ros:humble-ros-base \
-  /bin/bash
+For development questions and discussions:
+- Open an issue on GitHub
+- Check existing issues for solutions
+- Review pull requests for examples
 
-# Then manually run helper scripts
-/helper/main.sh --repo=/mount
-```
+## License
 
-### Debug Build Issues
-
-Check log files in the build directory:
-- `build_deb/log/` - General logs
-- `build_deb/build/*/gen_deb.out` - Package-specific logs
-- `build_deb/build/*/gen_deb.err` - Package-specific errors
-
-### Common Issues
-
-1. **Permission errors**: Ensure Docker can access mounted directories
-2. **Missing dependencies**: Check rosdep installation logs
-3. **Build failures**: Check individual package build logs
-4. **Debian generation errors**: Verify custom debian/ directories
-
-## Future Improvements
-
-- [ ] Add progress reporting
-- [ ] Support for incremental builds
-- [ ] Parallel package building
-- [ ] Better error handling and reporting
-- [ ] Configuration validation tool
-- [ ] Support for cross-compilation
+Apache License 2.0 - See LICENSE file for details.
