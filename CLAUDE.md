@@ -6,74 +6,118 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This project builds Debian packages for Autoware (autonomous driving platform) in isolated Docker containers. It implements a **two-program architecture**:
 
-1. **Host-side CLI** (`src/colcon_debian_packager/`) - Python orchestrator
-2. **Container-side scripts** (`scripts/`) - Bash build system
+1. **Host-side CLI** (`colcon2deb.py`) - Python orchestrator that launches Docker containers
+2. **Container-side scripts** (`helper/`) - Bash build scripts that run inside containers
 
-The output is a local APT repository (`autoware-localrepo_*.deb`) containing all Autoware packages.
+The output is Debian packages in a specified output directory that can be installed or assembled into an APT repository.
+
+**Package Management**: The project uses Rye for Python dependency management and package building.
 
 ## Key Commands
 
-### Build Everything
+### Package Installation and Development
 ```bash
-./start.sh  # One-shot build process
+# Install Rye (if not already installed)
+curl -sSf https://rye.astral.sh/get | bash
+
+# Set up development environment
+rye sync
+
+# Build the project wheel
+rye build --wheel
+
+# Build Debian package
+make deb
+
+# Install the Debian package
+sudo dpkg -i dist/colcon2deb_0.1.0-1_all.deb
 ```
 
-### Development Commands
+### Build Debian Packages for Autoware
 ```bash
-# Prepare environment
-make prepare
+# Using installed colcon2deb command
+colcon2deb --workspace ~/repos/autoware/0.45.1-ws/ --config examples/config.yaml
 
-# Build Docker container
-make build
+# Or using the example build scripts
+cd examples/autoware-0.45.1-amd64
+./build.sh  # This clones Autoware and runs colcon2deb
 
-# Enter container shell
-make run
-
-# Build repository packages
-make pack
-
-# Run tests
-source .venv/bin/activate
-pytest
-pytest --cov  # with coverage
-
-# Code quality
-black src/
-flake8 src/
-mypy src/
+# With remote Dockerfile URL
+colcon2deb --workspace ~/repos/autoware/0.45.1-ws/ --config examples/config-with-dockerfile.yaml
 ```
 
-### Python CLI (colcon-deb)
+### Docker Image Management
 ```bash
-colcon-deb init-config              # Initialize config
-colcon-deb build /path/to/autoware  # Build packages
-colcon-deb clean                    # Clean artifacts
-colcon-deb validate                 # Validate config
+# Build Docker images
+docker build -t colcon2deb:0.45.1-amd64 docker/0.45.1/amd64/
+docker build -t colcon2deb:2025.02-amd64 docker/2025.02/amd64/
+
+# For ARM64
+docker build -t colcon2deb:0.45.1-arm64 docker/0.45.1/arm64/
+
+# For Jetpack
+docker build -t colcon2deb:0.45.1-jetpack docker/0.45.1/jetpack-6.0/
+```
+
+### Testing
+```bash
+# Run tests with Rye
+rye run pytest tests/
+rye run pytest tests/ --cov
+
+# Specific test files
+rye run pytest tests/unit/test_colcon2deb.py
 ```
 
 ## Architecture
 
 ### Directory Structure
-- `src/colcon_debian_packager/` - Python CLI implementation
-  - `cli/` - Command interface
-  - `components/` - Debian/ROS builders
-  - `services/` - Docker and workspace management
-  - `models/` - Data models
-- `scripts/` - Container-side build scripts
-  - `main.sh` - Primary entry point
-  - Individual scripts for each build phase
-- `config/` - Pre-configured Debian templates for problematic packages
-- `setup/` - Ansible playbooks for environment setup
-- `tests/` - Test structure (unit/integration)
+- `colcon2deb.py` - Main entry point CLI
+- `helper/` - Container-side build scripts
+  - `entry.sh` - Docker container entry point
+  - `main.sh` - Build orchestrator
+  - `prepare.sh` - Initialize directories
+  - `copy-src.sh` - Copy source to build area
+  - `install-deps.sh` - Install dependencies via rosdep
+  - `build-src.sh` - Compile with colcon
+  - `create-rosdep-list.sh` - Generate custom rosdep mappings
+  - `create-package-list.sh` - List packages to build
+  - `generate-debian-dir.sh` - Create Debian metadata with bloom
+  - `build-deb.sh` - Build .deb packages
+- `config/` - Pre-configured Debian templates for problematic packages (shlibs.local files)
+- `docker/` - Dockerfiles for different platforms
+  - `0.45.1/` - For Autoware 0.45.1
+  - `2025.02/` - For Autoware 2025.02
+- `examples/` - Example configuration files with build scripts
+  - `autoware-0.45.1-amd64/` - Example for Autoware 0.45.1
+    - `build.sh` - Clones Autoware and builds packages
+    - `config.yaml` - Configuration file
+    - `debian-overrides/` - Package-specific overrides
+  - `autoware-2025.02-amd64/` - Example for Autoware 2025.02
+- `makedeb/` - Debian package build configuration
+  - `PKGBUILD` - Package build script for makedeb
+  - `colcon2deb` - Wrapper script for /usr/bin
+- `tests/` - Test suite
+- `doc/` - Documentation
+  - `roadmap.md` - Development roadmap
+  - `script-execution-model.md` - How scripts execute
+  - `troubleshooting-guide.md` - Common issues and solutions
+  - `parallel-optimization.md` - Performance tuning
+- `pyproject.toml` - Rye/Python project configuration
+- `Makefile` - Build automation (wheel, deb, clean)
 
 ### Build Process Flow
-1. `prepare.sh` - Initialize working directory
-2. `copy-src.sh` - Copy Autoware source
-3. `install-deps.sh` - Install ROS dependencies
-4. `build-src.sh` - Compile with colcon
-5. `create-rosdep-list.sh` - Generate dependency list
-6. `generate-debian-dir.sh` - Create Debian metadata
-7. `build-deb.sh` - Build .deb packages
+1. `colcon2deb.py` reads config and launches Docker container
+2. `helper/entry.sh` creates ubuntu user and starts build
+3. `helper/main.sh` orchestrates the build:
+   - `prepare.sh` - Initialize working directories
+   - `copy-src.sh` - Copy Autoware source
+   - `install-deps.sh` - Install ROS dependencies
+   - `build-src.sh` - Compile with colcon
+   - `create-rosdep-list.sh` - Generate custom rosdep mappings
+   - `create-package-list.sh` - List all packages
+   - `generate-debian-dir.sh` - Create Debian metadata with bloom
+   - `build-deb.sh` - Build .deb packages in parallel
 
 ### Key Design Principles
 - **No ROS on host** - Only Python and Docker required
@@ -83,39 +127,113 @@ colcon-deb validate                 # Validate config
 
 ## Testing
 
-Tests use pytest with a virtual environment at `.venv/`:
+**IMPORTANT: This project uses Rye for dependency management.**
 
 ```bash
-# Run specific test
-pytest tests/unit/cli/test_build.py
-
 # Run all tests
-pytest
+rye run pytest tests/
 
-# Test a specific component
-pytest tests/unit/services/test_docker_service.py
+# Run with coverage
+rye run pytest tests/ --cov
+
+# Run specific test file
+rye run pytest tests/unit/test_colcon2deb.py
+
+# Run tests in verbose mode
+rye run pytest tests/ -v
 ```
 
 ## Important Files
 
-- `src/colcon_debian_packager/cli/build.py` - Main build command implementation
-- `scripts/main.sh` - Container-side build orchestrator
-- `config/*/debian/` - Package-specific Debian configurations
-- `doc/ARCHITECTURE-OVERVIEW.md` - Detailed architecture documentation
+- `colcon2deb.py` - Main CLI entry point
+- `pyproject.toml` - Project configuration and dependencies
+- `Makefile` - Build automation (targets: wheel, deb, clean, setup-apt)
+- `helper/main.sh` - Container-side build orchestrator
+- `helper/entry.sh` - Docker container entry point
+- `helper/generate-rosdep-commands.sh` - Dependency resolution
+- `helper/build-deb.sh` - Parallel package building
+- `config/*/debian/shlibs.local` - Package-specific dependency mappings
+- `docker/*/Dockerfile` - Platform-specific container definitions
+- `makedeb/PKGBUILD` - Debian package build configuration
+- `examples/*/build.sh` - Example build scripts that clone Autoware
 
 ## Common Development Tasks
+
+### Building and Installing colcon2deb
+```bash
+# Build wheel package
+make wheel
+
+# Build Debian package
+make deb
+
+# Install the package
+sudo dpkg -i dist/colcon2deb_0.1.0-1_all.deb
+```
 
 ### Adding New Package Configuration
 1. Create directory in `config/<package_name>/`
 2. Add `debian/control`, `debian/rules`, `debian/changelog`
 3. Test with individual package build
 
+### Creating New Example Configuration
+1. Create directory in `examples/<name>/`
+2. Add `config.yaml` with Docker and build settings
+3. Create `build.sh` script to clone source and run colcon2deb
+4. Add `debian-overrides/` for package-specific overrides
+
 ### Debugging Build Issues
-1. Use `make run` to enter container
-2. Run individual scripts manually in `/workdir/`
-3. Check logs in build directory
+1. Run colcon2deb with verbose output
+2. Check logs in the build output directory
+3. Run individual helper scripts manually in container
 
 ### Modifying Build Process
-- Host-side changes: Edit Python code in `src/colcon_debian_packager/`
-- Container-side changes: Edit scripts in `scripts/`
+- Host-side changes: Edit `colcon2deb.py`
+- Container-side changes: Edit scripts in `helper/`
+- Docker images: Edit Dockerfiles in `docker/`
+- Package configuration: Edit `pyproject.toml` and `makedeb/PKGBUILD`
 - Always maintain separation between host and container responsibilities
+
+## Known Issues and Recent Fixes
+
+### Dependency Installation
+- PCL (Point Cloud Library) must be installed in Docker images
+- ROS setup.bash has issues with `set -u` (unbound variables)
+- Dependencies are installed by generating and executing a script
+
+### Performance
+- Use unique semaphore IDs to avoid blocking between build stages
+- I/O operations use fewer parallel jobs than CPU operations
+- Package builds limited to 1/4 of cores to prevent resource exhaustion
+- Large example directories excluded from wheel build to prevent hanging
+
+### Docker Images
+- Must include ROS 2 APT repository setup
+- Must run rosdep init and update
+- Must install libpcl-dev, libopencv-dev, python3-xmlschema
+- Autoware setup script must be run with appropriate flags
+
+### Rye and Virtual Environment
+- apt_pkg module not available via pip (system package only)
+- Use `make setup-apt` to link system apt packages into venv
+- makedeb requires apt_pkg for dependency checking
+- PKGBUILD uses `arch=('all')` for architecture-independent package
+
+## Configuration File Format
+
+```yaml
+# Basic configuration
+workspace_dir: /path/to/autoware/ws
+output_dir: /path/to/output
+dockerfile: docker/0.45.1/amd64/Dockerfile
+
+# Or with remote Dockerfile
+workspace_dir: /path/to/autoware/ws
+output_dir: /path/to/output
+dockerfile: https://example.com/Dockerfile
+
+# Or with prebuilt image
+workspace_dir: /path/to/autoware/ws
+output_dir: /path/to/output
+image: colcon2deb:0.45.1-amd64
+```
