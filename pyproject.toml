@@ -39,7 +39,13 @@ include = [
     "helper/**/*",
     "config/**/*",
     "docker/**/*",
-    "examples/**/*",
+    "examples/*/build.sh",
+    "examples/*/config.yaml",
+    "examples/*/debian-overrides/**/*",
+]
+exclude = [
+    "**/__pycache__",
+    "**/*.pyc",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -48,9 +54,15 @@ include = [
     "helper/**/*",
     "config/**/*",
     "docker/**/*",
-    "examples/**/*",
+    "examples/*/build.sh",
+    "examples/*/config.yaml",
+    "examples/*/debian-overrides/**/*",
     "README.md",
     "LICENSE",
+]
+exclude = [
+    "**/__pycache__",
+    "**/*.pyc",
 ]
 
 [tool.pytest.ini_options]

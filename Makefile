@@ -25,46 +25,31 @@ default:
 	@echo 'make deb'
 	@echo '    Create a Debian package using makedeb.'
 
-prepare:
-	sudo apt-get install qemu binfmt-support qemu-user-static
-	docker run --rm --privileged multiarch/qemu-user-static --reset -p yes --credential yes
-	sudo systemctl restart docker.service
-
-build:
-	docker build .. -f Dockerfile -t $(IMAGE_NAME)
-
-run:
-	./colcon2deb.py --workspace ~/repos/autoware/0.45.1-ws/ --config example/config.yaml
-
-save:
-	docker save $(IMAGE_NAME) | zstd -T0 -o $(IMAGE_NAME).tar.zstd
-
-pack:
-	$(MAKE) -C localrepo build
-
-tarball:
-	@echo "Creating source tarball for colcon2deb v$(VERSION)..."
-	@tar --transform 's,^,colcon2deb-$(VERSION)/,' \
-		--exclude='example/docker' \
-		--exclude='*.pyc' \
-		--exclude='__pycache__' \
-		-czf colcon2deb-$(VERSION).tar.gz \
-		colcon2deb.py \
-		helper/ \
-		example/ \
-		makedeb/ \
-		README.md
-	@echo "Tarball created: colcon2deb-$(VERSION).tar.gz"
+wheel:
+	@echo "Building Python wheel package..."
+	@rye build --wheel
+	@echo "Wheel package created in dist/"
 
 clean:
 	@rm -rf pkg/
 	@rm -rf src/
+	@rm -rf dist/
 	@rm -f *.deb
 	@rm -f *.tar.gz
 	@echo "Cleaned up build artifacts"
 
-deb: tarball
+setup-apt:
+	@echo "Setting up apt_pkg in virtual environment..."
+	@if [ -d .venv/lib/python3.10/site-packages ]; then \
+		ln -sf /usr/lib/python3/dist-packages/apt_pkg.cpython-310-x86_64-linux-gnu.so .venv/lib/python3.10/site-packages/ 2>/dev/null || true; \
+		ln -sf /usr/lib/python3/dist-packages/apt_inst.cpython-310-x86_64-linux-gnu.so .venv/lib/python3.10/site-packages/ 2>/dev/null || true; \
+		ln -sf /usr/lib/python3/dist-packages/apt .venv/lib/python3.10/site-packages/ 2>/dev/null || true; \
+	fi
+
+deb: wheel setup-apt
 	@echo "Building Debian package with makedeb..."
-	@cp colcon2deb-$(VERSION).tar.gz makedeb/
-	cd makedeb && makedeb -s
+	@cp dist/colcon2deb-$(VERSION)-py3-none-any.whl makedeb/
+	@cd makedeb && makedeb
+	@mkdir -p dist
+	@cp makedeb/*.deb dist/
 	@echo "Debian package created successfully!"

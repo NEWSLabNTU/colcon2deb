@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+import sys
+import os
+
+# Add the installation directory to Python path
+sys.path.insert(0, '/opt/colcon2deb')
+
+# Import and run the main function
+from colcon2deb import main
+
+if __name__ == '__main__':
+    main()

@@ -4,71 +4,48 @@
 pkgname=colcon2deb
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="Build Debian packages from colcon workspaces"
+pkgdesc="Build Debian packages for Autoware in isolated Docker containers"
 arch=('all')
 url="https://github.com/autowarefoundation/colcon2deb"
 license=('Apache-2.0')
 
 depends=(
-    'python3'
+    'python3>=3.10'
+    'python3-pip'
     'python3-yaml'
-    'docker-ce'
+    'python3-docker'
+    'python3-requests'
+)
+optdepends=(
+    'docker.io: Docker runtime for building packages'
 )
 
 makedepends=(
-    'python3'
+    'python3-pip'
 )
 
 source=(
-    "../colcon2deb-${pkgver}.tar.gz"
-    "colcon2deb-wrapper.py"
-    "README.md"
+    'colcon2deb'
+    'colcon2deb-0.1.0-py3-none-any.whl'
 )
-
 sha256sums=(
-    'SKIP'
     'SKIP'
     'SKIP'
 )
 
 package() {
-    # Create directories
+    # Create installation directories
+    install -dm755 "${pkgdir}/opt/${pkgname}"
     install -dm755 "${pkgdir}/usr/bin"
-    install -dm755 "${pkgdir}/usr/share/${pkgname}/helper"
-    install -dm755 "${pkgdir}/usr/share/${pkgname}/example"
-    install -dm755 "${pkgdir}/usr/share/doc/${pkgname}"
 
-    cd "${srcdir}/colcon2deb-${pkgver}"
+    # Install the wheel package to /opt/colcon2deb
+    pip install --target="${pkgdir}/opt/${pkgname}" \
+                --no-deps \
+                --no-compile \
+                "${srcdir}/colcon2deb-0.1.0-py3-none-any.whl"
 
-    # Install main Python script and helper scripts to /usr/share/colcon2deb
-    install -Dm755 "colcon2deb.py" "${pkgdir}/usr/share/${pkgname}/colcon2deb.py"
-    cp -r "helper/"* "${pkgdir}/usr/share/${pkgname}/helper/"
-    chmod 755 "${pkgdir}/usr/share/${pkgname}/helper/"*.sh
-
-    # Install wrapper script
-    install -Dm755 "${srcdir}/colcon2deb-wrapper.py" "${pkgdir}/usr/bin/colcon2deb"
-
-    # Install example files (excluding docker/ subdirectory)
-    cp -r "example/config" "${pkgdir}/usr/share/${pkgname}/example/"
-    install -Dm644 "example/config.yaml" "${pkgdir}/usr/share/${pkgname}/example/config.yaml"
-    
-    # Install additional example config if it exists
-    if [ -f "example/config-with-dockerfile.yaml" ]; then
-        install -Dm644 "example/config-with-dockerfile.yaml" "${pkgdir}/usr/share/${pkgname}/example/config-with-dockerfile.yaml"
-    fi
-
-    # Install documentation
-    install -Dm644 "${srcdir}/README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
-
-    # Create a simple changelog
-    cat > "${pkgdir}/usr/share/doc/${pkgname}/changelog" << EOF
-colcon2deb (${pkgver}-${pkgrel}) unstable; urgency=low
-
-  * Initial release
-
- -- Autoware Foundation <contact@autoware.org>  $(date -R)
-EOF
-    gzip -9 "${pkgdir}/usr/share/doc/${pkgname}/changelog"
+    # Install the wrapper script
+    install -Dm755 "${srcdir}/colcon2deb" "${pkgdir}/usr/bin/colcon2deb"
 }
 
 # vim: set ts=4 sw=4 et:

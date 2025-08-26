@@ -1,1 +1,4 @@
 /output/
+# Cloned source directories
+*/source/
+*/autoware/

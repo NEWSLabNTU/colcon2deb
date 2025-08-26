@@ -7,3 +7,6 @@
 # Python
 *.py[oc]
 __pycache__/
+
+# output
+/dist/
