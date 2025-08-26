@@ -42,7 +42,7 @@ package() {
     pip install --target="${pkgdir}/opt/${pkgname}" \
                 --no-deps \
                 --no-compile \
-                "${srcdir}/colcon2deb-0.1.0-py3-none-any.whl"
+                "${srcdir}/colcon2deb-${pkgver}-py3-none-any.whl"
 
     # Install the wrapper script
     install -Dm755 "${srcdir}/colcon2deb" "${pkgdir}/usr/bin/colcon2deb"

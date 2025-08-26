@@ -45,6 +45,7 @@ include = [
 exclude = [
     "**/__pycache__",
     "**/*.pyc",
+    "makedeb/**/*",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -62,6 +63,7 @@ include = [
 exclude = [
     "**/__pycache__",
     "**/*.pyc",
+    "makedeb/**/*",
 ]
 
 [tool.pytest.ini_options]
