@@ -27,7 +27,7 @@ default:
 
 wheel:
 	@echo "Building Python wheel package..."
-	@rye build --wheel
+	@uv build --wheel
 	@echo "Wheel package created in dist/"
 
 clean:

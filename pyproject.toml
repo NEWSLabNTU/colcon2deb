@@ -21,8 +21,7 @@ colcon2deb = "colcon2deb:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.rye]
-managed = true
+[tool.uv]
 dev-dependencies = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
