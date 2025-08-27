@@ -1,0 +1,14 @@
+[book]
+title = "colcon2deb Developer Guide"
+description = "Build Debian packages for Autoware in isolated Docker containers"
+authors = ["Autoware Foundation"]
+language = "en"
+multilingual = false
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+git-repository-url = "https://github.com/autowarefoundation/colcon2deb"
+git-repository-icon = "fa-github"
