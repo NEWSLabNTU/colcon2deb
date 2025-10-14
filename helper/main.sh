@@ -89,6 +89,12 @@ export output_dir=$(realpath "$output_dir")
 # Set ROS distribution (default to humble for Autoware)
 export ROS_DISTRO=${ROS_DISTRO:-humble}
 
+# Set ROS installation prefix (can be overridden via environment variable)
+# Default: /opt/ros/${ROS_DISTRO}
+export ROS_INSTALL_PREFIX="${ROS_INSTALL_PREFIX:-/opt/ros/${ROS_DISTRO}}"
+echo "info: ROS_DISTRO=$ROS_DISTRO"
+echo "info: ROS_INSTALL_PREFIX=$ROS_INSTALL_PREFIX"
+
 # Set working directory to the parent of this script.
 cd "$script_dir"
 

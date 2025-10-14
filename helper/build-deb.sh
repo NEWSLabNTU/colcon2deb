@@ -2,6 +2,11 @@
 cd "$colcon_work_dir"
 echo 'info: build Debian packages'
 
+# Export ROS_INSTALL_PREFIX for debian/rules to use
+# This allows packages to be installed to custom locations
+export ROS_INSTALL_PREFIX="${ROS_INSTALL_PREFIX:-/opt/ros/${ROS_DISTRO}}"
+echo "info: using install prefix: $ROS_INSTALL_PREFIX"
+
 # Use 1/4 of CPU cores for parallel package builds to avoid resource exhaustion
 # Each package build itself uses parallel compilation via DEB_BUILD_OPTIONS
 njobs=$(( ( $(nproc) + 3 ) / 4 ))

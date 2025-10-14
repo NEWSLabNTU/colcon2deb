@@ -316,6 +316,17 @@ def main():
     # The build_deb directory will be created inside the output directory
     # Users will find packages in output_dir/dist/
 
+    # Get build configuration
+    build_config = config.get("build", {})
+    ros_distro = build_config.get("ros_distro", "humble")
+
+    # Get install prefix configuration (optional)
+    # Default: /opt/ros/{ros_distro}
+    install_prefix = build_config.get("install_prefix", f"/opt/ros/{ros_distro}")
+
+    print(f"\n  ROS Distribution: {ros_distro}")
+    print(f"  Install Prefix: {install_prefix}")
+
     # Prepare Docker run command
     docker_cmd = [
         "docker",
@@ -327,6 +338,10 @@ def main():
         "nvidia",
         "-e",
         f"DISPLAY={os.environ.get('DISPLAY', ':0')}",
+        "-e",
+        f"ROS_DISTRO={ros_distro}",
+        "-e",
+        f"ROS_INSTALL_PREFIX={install_prefix}",
         "-v",
         "/tmp/.X11-unix/:/tmp/.X11-unix",
         "-v",

@@ -34,6 +34,16 @@ copy_or_create_debian_dir() {
 	    set -Eeuo pipefail
 	    cd "$pkg_config_dir"
 	    bloom-generate rosdebian --ros-distro "$ROS_DISTRO" "$pkg_dir"
+
+	    # Apply custom rules.em template to support configurable install prefix
+	    custom_rules_template="$script_dir/templates/debian/rules.em"
+	    if [ -f "$custom_rules_template" ]; then
+	        echo "info: applying custom rules.em template for $pkg_name"
+	        cp "$custom_rules_template" "$pkg_config_dir/debian/rules.em"
+	        # Reprocess the rules template with bloom
+	        bloom-generate rosdebian --process-template-files --ros-distro "$ROS_DISTRO" "$pkg_dir"
+	    fi
+
 	    rsync -av --delete "$pkg_config_dir/debian/" "$dst_debian_dir/"
 	) >> "$out_file" 2>> "$err_file" ||
 	    echo "error: fail to generate Debain files for ${pkg_name}" >&2
