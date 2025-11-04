@@ -33,10 +33,23 @@ copy_or_create_debian_dir() {
 	(
 	    set -Eeuo pipefail
 	    cd "$pkg_config_dir"
+
+	    # Create bloom.conf to set InstallationPrefix variable
+	    # This variable is used in the rules.em template
+	    cat > "$pkg_config_dir/bloom.conf" <<EOF
+# bloom.conf - Configuration for bloom-generate
+# This file sets template variables for EmPy processing
+
+[variables]
+InstallationPrefix=${ROS_INSTALL_PREFIX}
+EOF
+
+	    # Export InstallationPrefix for bloom's EmPy template context
+	    export InstallationPrefix="${ROS_INSTALL_PREFIX}"
 	    bloom-generate rosdebian --ros-distro "$ROS_DISTRO" "$pkg_dir"
 
 	    # Apply custom rules.em template to support configurable install prefix
-	    custom_rules_template="$script_dir/templates/debian/rules.em"
+	    custom_rules_template="$(dirname "$script_dir")/templates/debian/rules.em"
 	    if [ -f "$custom_rules_template" ]; then
 	        echo "info: applying custom rules.em template for $pkg_name"
 	        cp "$custom_rules_template" "$pkg_config_dir/debian/rules.em"
