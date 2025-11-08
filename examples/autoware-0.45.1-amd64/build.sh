@@ -4,11 +4,30 @@ set -e
 # Script to build Autoware 0.45.1 Debian packages
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="${SCRIPT_DIR}/source"
-AUTOWARE_BRANCH="0.45.1-ws"
-AUTOWARE_REPO="https://github.com/NEWSLabNTU/autoware.git"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 echo "=== Building Autoware 0.45.1 AMD64 Debian packages ==="
+
+# Check if source directory exists
+if [ ! -d "${SOURCE_DIR}" ]; then
+    echo "Error: Source directory not found at ${SOURCE_DIR}"
+    echo "Please prepare the Autoware workspace first. See README.md for instructions."
+    exit 1
+fi
+
+# Check if source has packages (at least some package.xml files)
+PACKAGE_COUNT=$(find "${SOURCE_DIR}/src" -name "package.xml" 2>/dev/null | wc -l)
+if [ "${PACKAGE_COUNT}" -eq 0 ]; then
+    echo "Error: No ROS packages found in ${SOURCE_DIR}/src"
+    echo "Please import dependencies first. See README.md for instructions."
+    echo ""
+    echo "Quick start:"
+    echo "  cd ${SOURCE_DIR}"
+    echo "  vcs import src < autoware.repos"
+    exit 1
+fi
+
+echo "Found ${PACKAGE_COUNT} ROS packages in source directory"
 
 # Check if colcon2deb is available
 if command -v colcon2deb &> /dev/null; then
@@ -21,20 +40,7 @@ else
     echo "Please install it first:"
     echo "  cd ${PROJECT_ROOT}"
     echo "  uv sync  # Install dependencies"
-    echo "  uv run colcon2deb --help  # Verify installation"
     exit 1
-fi
-
-# Clone or update the Autoware repository
-if [ -d "${SOURCE_DIR}" ]; then
-    echo "Source directory exists. Updating..."
-    cd "${SOURCE_DIR}"
-    git fetch origin
-    git checkout "${AUTOWARE_BRANCH}"
-    git pull origin "${AUTOWARE_BRANCH}"
-else
-    echo "Cloning Autoware repository (branch: ${AUTOWARE_BRANCH})..."
-    git clone --branch "${AUTOWARE_BRANCH}" "${AUTOWARE_REPO}" "${SOURCE_DIR}"
 fi
 
 # Run colcon2deb
