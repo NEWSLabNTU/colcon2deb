@@ -331,11 +331,8 @@ def main():
     docker_cmd = [
         "docker",
         "run",
-        "-it",
         "--rm",
         "--net=host",
-        "--runtime",
-        "nvidia",
         "-e",
         f"DISPLAY={os.environ.get('DISPLAY', ':0')}",
         "-e",
@@ -358,6 +355,12 @@ def main():
         f"--gid={gid}",
         f"--output=/output",
     ]
+
+    # Add nvidia runtime if available and requested in config
+    use_nvidia = build_config.get("use_nvidia_runtime", False)
+    if use_nvidia:
+        docker_cmd.insert(4, "--runtime")
+        docker_cmd.insert(5, "nvidia")
 
     # Run the container
     print(f"\nStarting container:")
