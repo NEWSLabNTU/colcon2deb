@@ -6,7 +6,7 @@ docker:
   dockerfile: https://raw.githubusercontent.com/NEWSLabNTU/autoware-build-images/refs/heads/main/2025.02/amd64/Dockerfile
 
   # Optional: Custom image name for caching
-  image_name: autoware-0.45.1-builder
+  image_name: autoware-2025.02-builder
 
 # Output configuration with descriptive name
 output:
@@ -21,3 +21,5 @@ build:
   ros_distro: humble
   parallel_jobs: 8
   skip_tests: true
+  # Custom installation prefix for Autoware 2025.02
+  install_prefix: /opt/autoware/2025.02
