@@ -1,0 +1,25 @@
+version: 1
+
+# Docker configuration
+docker:
+  # Use the same Dockerfile as Autoware 2025.02 for testing
+  dockerfile: https://raw.githubusercontent.com/NEWSLabNTU/autoware-build-images/refs/heads/main/2025.02/amd64/Dockerfile
+
+  # Custom image name for testing
+  image_name: colcon2deb-test
+
+# Output configuration
+output:
+  directory: ./build
+
+# Package configurations
+packages:
+  directory: ./debian-overrides
+
+# Build options
+build:
+  ros_distro: humble
+  parallel_jobs: 4
+  skip_tests: true
+  # Standard ROS installation prefix for testing
+  install_prefix: /opt/ros/humble

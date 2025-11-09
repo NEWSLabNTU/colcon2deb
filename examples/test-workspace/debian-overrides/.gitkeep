@@ -1,0 +1,4 @@
+# This directory is for Debian package overrides
+#
+# Add package-specific overrides here if needed.
+# For the minimal test workspace, no overrides are necessary.
