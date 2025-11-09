@@ -1,13 +1,14 @@
 """Main orchestrator for building Debian packages."""
 
 import argparse
+import subprocess
 import sys
 import os
 from pathlib import Path
 
 from . import __version__
 from .config import BuildConfig
-from .utils import logger, print_phase, set_display, start_phase, complete_phase
+from .utils import logger, print_phase, set_display, start_phase, complete_phase, Colors
 from .display import BuildDisplay
 from . import prepare, dependencies, compiler, debian, packager
 
@@ -117,9 +118,9 @@ def main():
             set_display(display)
 
             # Print configuration
-            display.log("Build Configuration", level="info")
-            display.log(f"  ROS Distribution: {config.ros_distro}")
-            display.log(f"  Install Prefix: {config.ros_install_prefix}")
+            display.log(f"{Colors.BOLD}{Colors.CYAN}Build Configuration{Colors.RESET}", level="info")
+            display.log(f"  ROS Distribution: {Colors.GREEN}{config.ros_distro}{Colors.RESET}")
+            display.log(f"  Install Prefix: {Colors.GREEN}{config.ros_install_prefix}{Colors.RESET}")
             display.log(f"  Workspace: {config.workspace_dir}")
             display.log(f"  Output: {config.output_dir}")
 
@@ -166,17 +167,23 @@ def main():
                 logger.warning(f"{failed_count} packages failed to build")
                 sys.exit(1)
 
-            logger.info("Build completed successfully!")
+            logger.info(f"{Colors.BOLD}{Colors.GREEN}Build completed successfully!{Colors.RESET}")
             sys.exit(0)
 
     except KeyboardInterrupt:
         logger.error("\nBuild interrupted by user")
         sys.exit(130)
 
+    except subprocess.CalledProcessError as e:
+        # Clean error message for command failures without full traceback
+        logger.error(f"Build failed: Command failed with exit code {e.returncode}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Build failed: {e}")
-        import traceback
-        traceback.print_exc()
+        # Only show traceback in verbose mode
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
         sys.exit(1)
 
 

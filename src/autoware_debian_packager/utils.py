@@ -7,11 +7,70 @@ from typing import Optional, Union
 from datetime import datetime
 
 
-# Configure logging
+# ANSI color codes
+class Colors:
+    """ANSI color codes for terminal output."""
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+    DIM = '\033[2m'
+
+    # Foreground colors
+    BLACK = '\033[30m'
+    RED = '\033[31m'
+    GREEN = '\033[32m'
+    YELLOW = '\033[33m'
+    BLUE = '\033[34m'
+    MAGENTA = '\033[35m'
+    CYAN = '\033[36m'
+    WHITE = '\033[37m'
+
+    # Bright foreground colors
+    BRIGHT_BLACK = '\033[90m'
+    BRIGHT_RED = '\033[91m'
+    BRIGHT_GREEN = '\033[92m'
+    BRIGHT_YELLOW = '\033[93m'
+    BRIGHT_BLUE = '\033[94m'
+    BRIGHT_MAGENTA = '\033[95m'
+    BRIGHT_CYAN = '\033[96m'
+    BRIGHT_WHITE = '\033[97m'
+
+
+class ColoredFormatter(logging.Formatter):
+    """Custom formatter that adds colors to log levels."""
+
+    COLORS = {
+        'DEBUG': Colors.DIM + Colors.WHITE,
+        'INFO': Colors.CYAN,
+        'WARNING': Colors.YELLOW,
+        'ERROR': Colors.RED,
+        'CRITICAL': Colors.BOLD + Colors.RED,
+    }
+
+    def format(self, record):
+        # Add color to levelname
+        levelname = record.levelname
+        if levelname in self.COLORS:
+            record.levelname = f"{self.COLORS[levelname]}{levelname}{Colors.RESET}"
+
+        # Format the message
+        result = super().format(record)
+
+        # Reset levelname for other handlers
+        record.levelname = levelname
+
+        return result
+
+
+# Configure logging with colors
+handler = logging.StreamHandler()
+handler.setFormatter(ColoredFormatter(
+    fmt='[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+))
+
 logging.basicConfig(
     level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    handlers=[handler]
 )
 
 logger = logging.getLogger(__name__)

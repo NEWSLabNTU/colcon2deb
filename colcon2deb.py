@@ -15,6 +15,20 @@ import atexit
 from pathlib import Path
 
 
+# ANSI color codes
+class Colors:
+    """ANSI color codes for terminal output."""
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+    GREEN = '\033[32m'
+    YELLOW = '\033[33m'
+    RED = '\033[31m'
+    CYAN = '\033[36m'
+    BRIGHT_GREEN = '\033[92m'
+    BRIGHT_RED = '\033[91m'
+    BRIGHT_YELLOW = '\033[93m'
+
+
 def run_command(cmd, check=True, log_file=None, show_output=False):
     """Run a shell command and return the result.
 
@@ -458,7 +472,7 @@ def main():
         docker_cmd.insert(5, "nvidia")
 
     # Run the container
-    print(f"Building packages...")
+    print(f"{Colors.CYAN}Building packages...{Colors.RESET}")
     if verbose:
         print(f"  Workspace directory: {workspace_dir} -> /workspace")
         print(f"  Packages config directory: {packages_dir} -> /config")
@@ -478,23 +492,23 @@ def main():
                 stderr=subprocess.STDOUT,
                 check=True
             )
-        print(f"✓ Build completed successfully!")
-        print(f"  Debian packages: {output_dir}/dist/")
+        print(f"{Colors.BOLD}{Colors.BRIGHT_GREEN}✓ Build completed successfully!{Colors.RESET}")
+        print(f"  Debian packages: {Colors.GREEN}{output_dir}/dist/{Colors.RESET}")
         if verbose:
             print(f"  Container log: {container_log}")
     except subprocess.CalledProcessError as e:
-        print(f"\n✗ Build failed (exit code {e.returncode})", file=sys.stderr)
-        print(f"  See container log: {container_log}", file=sys.stderr)
+        print(f"\n{Colors.BOLD}{Colors.BRIGHT_RED}✗ Build failed (exit code {e.returncode}){Colors.RESET}", file=sys.stderr)
+        print(f"  See container log: {Colors.YELLOW}{container_log}{Colors.RESET}", file=sys.stderr)
         # Show last 50 lines of container log on failure
         if container_log.exists():
-            print(f"\n--- Last 50 lines of container output ---", file=sys.stderr)
+            print(f"\n{Colors.BRIGHT_YELLOW}--- Last 50 lines of container output ---{Colors.RESET}", file=sys.stderr)
             with open(container_log, 'r') as f:
                 lines = f.readlines()
                 for line in lines[-50:]:
                     print(line.rstrip(), file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\n✗ Interrupted by user")
+        print(f"\n{Colors.BRIGHT_YELLOW}✗ Interrupted by user{Colors.RESET}")
         sys.exit(0)
 
 
