@@ -2,11 +2,13 @@
 
 import argparse
 import sys
+import os
 from pathlib import Path
 
 from . import __version__
 from .config import BuildConfig
-from .utils import logger, print_phase
+from .utils import logger, print_phase, set_display, start_phase, complete_phase
+from .display import BuildDisplay
 from . import prepare, dependencies, compiler, debian, packager
 
 
@@ -73,7 +75,26 @@ def main():
         version=f"%(prog)s {__version__}",
     )
 
+    parser.add_argument(
+        "--plain-output",
+        action="store_true",
+        help="Use plain text output (disable rich formatting)",
+    )
+
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show verbose output (debug messages and command details)",
+    )
+
     args = parser.parse_args()
+
+    # Set logging level based on verbose flag
+    if args.verbose:
+        import logging
+        logger.setLevel(logging.DEBUG)
+        # Also set root logger to DEBUG to catch all module loggers
+        logging.getLogger().setLevel(logging.DEBUG)
 
     # Create build configuration
     config = BuildConfig(
@@ -88,42 +109,65 @@ def main():
     )
 
     try:
-        # Print configuration
-        print_phase("Build Configuration")
-        print(f"  ROS Distribution: {config.ros_distro}")
-        print(f"  Install Prefix: {config.ros_install_prefix}")
-        print(f"  Workspace: {config.workspace_dir}")
-        print(f"  Output: {config.output_dir}")
+        # Determine if we should use rich display
+        use_rich = not args.plain_output and not os.getenv("CI") == "true"
 
-        # Execute build phases
-        prepare.setup_directories(config)
-        prepare.copy_workspace(config)
+        # Create and configure display
+        with BuildDisplay(total_phases=8, enable_live=use_rich, verbose=args.verbose) as display:
+            set_display(display)
 
-        dependencies.install_dependencies(config)
+            # Print configuration
+            display.log("Build Configuration", level="info")
+            display.log(f"  ROS Distribution: {config.ros_distro}")
+            display.log(f"  Install Prefix: {config.ros_install_prefix}")
+            display.log(f"  Workspace: {config.workspace_dir}")
+            display.log(f"  Output: {config.output_dir}")
 
-        compiler.build_workspace(config)
-        compiler.source_install_setup(config)
+            # Execute build phases
+            start_phase(1, "Preparing working directories")
+            prepare.setup_directories(config)
+            complete_phase(1)
 
-        debian.create_rosdep_list(config)
+            start_phase(2, "Copying source files")
+            prepare.copy_workspace(config)
+            complete_phase(2)
 
-        print_phase("Phase 6: Creating package list")
-        packages = debian.get_package_list(config)
-        logger.info(f"  Found {len(packages)} packages")
+            start_phase(3, "Installing dependencies")
+            dependencies.install_dependencies(config)
+            complete_phase(3)
 
-        debian.generate_debian_metadata(config)
+            start_phase(4, "Compiling packages")
+            compiler.build_workspace(config)
+            compiler.source_install_setup(config)
+            complete_phase(4)
 
-        results = packager.build_packages_parallel(config)
+            start_phase(5, "Generating rosdep list")
+            debian.create_rosdep_list(config)
+            complete_phase(5)
 
-        packager.print_build_summary(config, results)
+            start_phase(6, "Creating package list")
+            packages = debian.get_package_list(config)
+            logger.info(f"  Found {len(packages)} packages")
+            complete_phase(6)
 
-        # Check if any packages failed
-        failed_count = sum(1 for r in results.values() if not r.success)
-        if failed_count > 0:
-            logger.warning(f"{failed_count} packages failed to build")
-            sys.exit(1)
+            start_phase(7, "Generating Debian metadata")
+            debian.generate_debian_metadata(config)
+            complete_phase(7)
 
-        logger.info("Build completed successfully!")
-        sys.exit(0)
+            start_phase(8, "Building Debian packages")
+            results = packager.build_packages_parallel(config)
+            complete_phase(8)
+
+            packager.print_build_summary(config, results)
+
+            # Check if any packages failed
+            failed_count = sum(1 for r in results.values() if not r.success)
+            if failed_count > 0:
+                logger.warning(f"{failed_count} packages failed to build")
+                sys.exit(1)
+
+            logger.info("Build completed successfully!")
+            sys.exit(0)
 
     except KeyboardInterrupt:
         logger.error("\nBuild interrupted by user")

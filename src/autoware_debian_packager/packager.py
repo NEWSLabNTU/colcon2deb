@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Tuple, Dict
 
 from .config import BuildConfig
-from .utils import logger, print_phase, ensure_dir
+from .utils import logger, print_phase, ensure_dir, add_subtask, get_display
 
 
 class PackageBuildResult:
@@ -61,7 +61,7 @@ def build_single_package(pkg_name: str, config: BuildConfig) -> PackageBuildResu
 
     if package_list:
         pkg_src_dir = package_list[0]
-        logger.info(f"  Copying source from {pkg_src_dir} to {pkg_work_dir}")
+        logger.debug(f"  Copying source from {pkg_src_dir} to {pkg_work_dir}")
 
         # Copy all source files except build artifacts
         rsync_cmd = [
@@ -71,9 +71,9 @@ def build_single_package(pkg_name: str, config: BuildConfig) -> PackageBuildResu
             f"{pkg_src_dir}/", str(pkg_work_dir) + "/"
         ]
         result = subprocess.run(rsync_cmd, check=True, capture_output=True, text=True)
-        logger.info(f"  rsync output: {result.stdout[:500]}")
+        logger.debug(f"  rsync output: {result.stdout[:500]}")
         if result.stderr:
-            logger.warning(f"  rsync warnings: {result.stderr[:500]}")
+            logger.debug(f"  rsync warnings: {result.stderr[:500]}")
     else:
         logger.warning(f"  Could not find package source for {pkg_name}")
 
@@ -150,9 +150,6 @@ def build_packages_parallel(config: BuildConfig) -> Dict[str, PackageBuildResult
     Returns:
         Dictionary mapping package names to build results
     """
-    print_phase("Phase 8: Building Debian packages")
-    logger.info("info: build Debian packages")
-
     # Get list of packages from colcon workspace
     cmd = [
         "bash",
@@ -168,16 +165,24 @@ def build_packages_parallel(config: BuildConfig) -> Dict[str, PackageBuildResult
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     packages = [line.strip() for line in result.stdout.split('\n') if line.strip()]
 
-    logger.info(f"  Building {len(packages)} packages")
-
     # Use 1/4 of CPU cores for package building to prevent resource exhaustion
     max_workers = max(1, os.cpu_count() // 4)
-    logger.info(f"  Using {max_workers} parallel workers")
+
+    add_subtask(8, f"Building {len(packages)} packages (using {max_workers} workers)...")
 
     results = {}
     succeeded = 0
     failed = 0
     skipped = 0
+
+    # Get display instance for progress bar
+    display = get_display()
+    progress_task = None
+    if display:
+        progress_task = display.create_progress_task(
+            "Building Debian packages",
+            total=len(packages)
+        )
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -206,16 +211,23 @@ def build_packages_parallel(config: BuildConfig) -> Dict[str, PackageBuildResult
                 else:
                     failed += 1
 
-                # Progress update every 10 packages
-                if completed % 10 == 0:
-                    logger.info(f"  Progress: {completed}/{len(packages)} packages processed")
+                # Update progress
+                if display and progress_task:
+                    display.update_progress(progress_task, advance=1)
 
             except Exception as e:
                 logger.error(f"  ✗ Exception building {pkg_name}: {e}")
                 results[pkg_name] = PackageBuildResult(pkg_name, False, error=str(e))
                 failed += 1
 
-    logger.info(f"  ✓ Build complete: {succeeded} succeeded, {skipped} skipped, {failed} failed")
+                # Update progress even on error
+                if display and progress_task:
+                    display.update_progress(progress_task, advance=1)
+
+    if failed > 0:
+        add_subtask(8, f"⚠ {failed} packages failed (see logs)")
+
+    add_subtask(8, f"✓ Build complete: {succeeded} built, {skipped} skipped, {failed} failed")
     return results
 
 

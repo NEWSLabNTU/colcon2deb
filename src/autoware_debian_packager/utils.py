@@ -16,12 +16,76 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+# Global display instance (set by main)
+_display = None
+
+
+def set_display(display):
+    """Set the global display instance for Docker-style output.
+
+    Args:
+        display: BuildDisplay instance or None
+    """
+    global _display
+    _display = display
+
+
+def get_display():
+    """Get the global display instance.
+
+    Returns:
+        BuildDisplay instance or None
+    """
+    return _display
+
 
 def print_phase(message: str):
-    """Print a timestamped phase message."""
+    """Print a timestamped phase message.
+
+    Deprecated: Use start_phase() with phase number instead.
+
+    Args:
+        message: Phase message
+    """
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"\n[{timestamp}] {message}")
     logger.info(message)
+
+
+def start_phase(phase_num: int, name: str):
+    """Start a build phase with Docker-style display.
+
+    Args:
+        phase_num: Phase number (1-indexed)
+        name: Phase name
+    """
+    if _display:
+        _display.start_phase(phase_num, name)
+    else:
+        # Fallback to simple logging
+        print_phase(f"Phase {phase_num}: {name}")
+
+
+def complete_phase(phase_num: int, success: bool = True):
+    """Mark a phase as complete.
+
+    Args:
+        phase_num: Phase number (1-indexed)
+        success: Whether phase succeeded
+    """
+    if _display:
+        _display.complete_phase(phase_num, success)
+
+
+def add_subtask(phase_num: int, message: str):
+    """Add a subtask message to current phase.
+
+    Args:
+        phase_num: Phase number (1-indexed)
+        message: Subtask message
+    """
+    if _display:
+        _display.add_subtask(phase_num, message)
 
 
 def run_command(

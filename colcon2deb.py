@@ -60,10 +60,11 @@ def run_command(cmd, check=True, log_file=None, show_output=False):
         return result
 
 
-def download_dockerfile(url, cache_dir=None):
+def download_dockerfile(url, cache_dir=None, verbose=False):
     """Download Dockerfile from HTTP/HTTPS URL."""
-    print(f"\nDownloading Dockerfile from URL...")
-    print(f"  URL: {url}")
+    if verbose:
+        print(f"\nDownloading Dockerfile from URL...")
+        print(f"  URL: {url}")
 
     # Create cache directory if specified
     if cache_dir:
@@ -76,12 +77,14 @@ def download_dockerfile(url, cache_dir=None):
 
         # Check if cached file exists
         if cached_file.exists():
-            print(f"  ✓ Using cached Dockerfile")
-            print(f"  Cache location: {cached_file}")
+            if verbose:
+                print(f"  ✓ Using cached Dockerfile")
+                print(f"  Cache location: {cached_file}")
             return cached_file
 
     try:
-        print(f"  Fetching from remote...")
+        if verbose:
+            print(f"  Fetching from remote...")
         # Download the file
         request = urllib.request.Request(url, headers={"User-Agent": "colcon2deb/1.0"})
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -96,13 +99,15 @@ def download_dockerfile(url, cache_dir=None):
                 file=sys.stderr,
             )
 
-        print(f"  ✓ Downloaded {content_length} bytes")
+        if verbose:
+            print(f"  ✓ Downloaded {content_length} bytes")
 
         # Save to temporary file or cache
         if cache_dir and cached_file:
             cached_file.write_bytes(content)
-            print(f"  ✓ Cached for future use")
-            print(f"  Cache location: {cached_file}")
+            if verbose:
+                print(f"  ✓ Cached for future use")
+                print(f"  Cache location: {cached_file}")
             return cached_file
         else:
             # Create temporary file
@@ -111,7 +116,8 @@ def download_dockerfile(url, cache_dir=None):
             ) as tmp_file:
                 tmp_file.write(content)
                 temp_path = Path(tmp_file.name)
-                print(f"  ✓ Saved to temporary location")
+                if verbose:
+                    print(f"  ✓ Saved to temporary location")
                 return temp_path
 
     except urllib.error.HTTPError as e:
@@ -127,7 +133,7 @@ def download_dockerfile(url, cache_dir=None):
         sys.exit(1)
 
 
-def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None, log_dir=None):
+def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None, log_dir=None, verbose=False):
     """Build Docker image from Dockerfile."""
     dockerfile_path = Path(dockerfile_path).resolve()
     if not dockerfile_path.exists():
@@ -150,9 +156,10 @@ def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None,
         image_name,
     ]
 
-    print(f"Building Docker image '{image_name}'...")
-    print(f"  Dockerfile: {dockerfile_path}")
-    print(f"  Build context: {build_context}")
+    if verbose:
+        print(f"Building Docker image '{image_name}'...")
+        print(f"  Dockerfile: {dockerfile_path}")
+        print(f"  Build context: {build_context}")
 
     # Log docker build output to file if log_dir provided
     log_file = None
@@ -161,7 +168,7 @@ def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None,
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / "docker_build.log"
 
-    run_command(cmd, log_file=log_file, show_output=True)
+    run_command(cmd, log_file=log_file, show_output=verbose)
     return image_name
 
 
@@ -201,8 +208,16 @@ def main():
         help="Path to configuration YAML file",
     )
 
+    # Verbose flag
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show verbose output including Docker build details",
+    )
+
     # Parse arguments
     args = parser.parse_args()
+    verbose = args.verbose
 
     # Load configuration
     config = load_config(args.config)
@@ -256,21 +271,23 @@ def main():
 
         # Check if it's a URL
         if dockerfile_value.startswith(("http://", "https://")):
-            print("\n" + "=" * 60)
-            print("Remote Dockerfile Configuration Detected")
-            print("=" * 60)
+            if verbose:
+                print("\n" + "=" * 60)
+                print("Remote Dockerfile Configuration Detected")
+                print("=" * 60)
 
             # Download Dockerfile from URL
             # Use cache directory in user's home or temp
             cache_dir = Path.home() / ".cache" / "colcon2deb" / "dockerfiles"
-            dockerfile_path = download_dockerfile(dockerfile_value, cache_dir)
+            dockerfile_path = download_dockerfile(dockerfile_value, cache_dir, verbose=verbose)
 
             # For remote Dockerfiles, use a minimal build context
             # Create a temporary directory with just the Dockerfile
             temp_context = tempfile.mkdtemp(prefix="colcon2deb_context_")
 
-            print(f"\nPreparing build context...")
-            print(f"  Temporary context: {temp_context}")
+            if verbose:
+                print(f"\nPreparing build context...")
+                print(f"  Temporary context: {temp_context}")
 
             # Register cleanup function to remove temp directory
             def cleanup_temp_context():
@@ -308,6 +325,7 @@ def main():
                 docker_config.get("image_name", "colcon2deb_builder"),
                 build_context=build_context,
                 log_dir=log_dir,
+                verbose=verbose,
             )
     else:
         image_name = docker_config["image"]
@@ -372,8 +390,9 @@ def main():
     # Default: /opt/ros/{ros_distro}
     install_prefix = build_config.get("install_prefix", f"/opt/ros/{ros_distro}")
 
-    print(f"\n  ROS Distribution: {ros_distro}")
-    print(f"  Install Prefix: {install_prefix}")
+    if verbose:
+        print(f"\n  ROS Distribution: {ros_distro}")
+        print(f"  Install Prefix: {install_prefix}")
 
     # Prepare Docker run command
     # Mount the entire colcon2deb source so the package can be installed in the container
@@ -439,22 +458,43 @@ def main():
         docker_cmd.insert(5, "nvidia")
 
     # Run the container
-    print(f"\nStarting container:")
-    print(f"  Workspace directory: {workspace_dir} -> /workspace")
-    print(f"  Packages config directory: {packages_dir} -> /config")
-    print(f"  Output directory: {output_dir} -> /output")
-    print(f"  Package source: {script_dir} -> /colcon2deb_src (read-only)")
-    print(f"  Using image: {image_name}")
-    print(f"\n  Build artifacts will be in: {output_dir}/")
-    print(f"  Final .deb packages will be in: {output_dir}/dist/")
+    print(f"Building packages...")
+    if verbose:
+        print(f"  Workspace directory: {workspace_dir} -> /workspace")
+        print(f"  Packages config directory: {packages_dir} -> /config")
+        print(f"  Output directory: {output_dir} -> /output")
+        print(f"  Package source: {script_dir} -> /colcon2deb_src (read-only)")
+        print(f"  Using image: {image_name}")
+
+    # Capture container output to log file
+    container_log = output_dir / "log" / "container.log"
+    container_log.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        subprocess.run(docker_cmd)
+        with open(container_log, 'w') as log_file:
+            result = subprocess.run(
+                docker_cmd,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                check=True
+            )
+        print(f"✓ Build completed successfully!")
+        print(f"  Debian packages: {output_dir}/dist/")
+        if verbose:
+            print(f"  Container log: {container_log}")
     except subprocess.CalledProcessError as e:
-        print(f"Error running container: {e}", file=sys.stderr)
+        print(f"\n✗ Build failed (exit code {e.returncode})", file=sys.stderr)
+        print(f"  See container log: {container_log}", file=sys.stderr)
+        # Show last 50 lines of container log on failure
+        if container_log.exists():
+            print(f"\n--- Last 50 lines of container output ---", file=sys.stderr)
+            with open(container_log, 'r') as f:
+                lines = f.readlines()
+                for line in lines[-50:]:
+                    print(line.rstrip(), file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\nInterrupted by user")
+        print("\n✗ Interrupted by user")
         sys.exit(0)
 
 

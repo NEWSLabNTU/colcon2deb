@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from .config import BuildConfig
-from .utils import logger, print_phase, run_command, ensure_dir
+from .utils import logger, print_phase, run_command, ensure_dir, add_subtask, get_display
 
 
 def create_rosdep_list(config: BuildConfig):
@@ -17,10 +17,8 @@ def create_rosdep_list(config: BuildConfig):
     their install locations.
     """
     if config.skip_gen_rosdep_list:
-        logger.info("info: skip generating rosdep list")
+        add_subtask(5, "Skipped (--skip-gen-rosdep-list)")
         return
-
-    print_phase("Phase 5: Generating rosdep list")
 
     rosdep_file = config.output_dir / "rosdep.yaml"
 
@@ -28,9 +26,11 @@ def create_rosdep_list(config: BuildConfig):
     install_dir = config.colcon_work_dir / "install"
 
     if not install_dir.exists():
-        logger.warning(f"Install directory not found: {install_dir}")
+        add_subtask(5, f"Install directory not found: {install_dir}")
         rosdep_file.touch()
         return
+
+    add_subtask(5, "Scanning installed packages...")
 
     # Generate rosdep mappings
     # Format: package_name: {ubuntu: [ros-{distro}-package-name]}
@@ -48,8 +48,7 @@ def create_rosdep_list(config: BuildConfig):
     with open(rosdep_file, 'w') as f:
         yaml.dump(mappings, f, default_flow_style=False)
 
-    logger.info(f"  Generated rosdep list with {len(mappings)} packages")
-    logger.info(f"  ✓ Rosdep list created: {rosdep_file}")
+    add_subtask(5, f"✓ Created rosdep list with {len(mappings)} packages")
 
 
 def get_package_list(config: BuildConfig) -> List[Tuple[str, Path]]:
@@ -57,7 +56,7 @@ def get_package_list(config: BuildConfig) -> List[Tuple[str, Path]]:
 
     Returns list of (package_name, package_path) tuples.
     """
-    logger.info("info: create Debian package list")
+    add_subtask(6, "Listing packages in workspace...")
 
     # Use colcon list to get packages
     cmd = [
@@ -83,7 +82,7 @@ def get_package_list(config: BuildConfig) -> List[Tuple[str, Path]]:
                 pkg_path = config.colcon_work_dir / parts[1]
                 packages.append((pkg_name, pkg_path))
 
-    logger.info(f"  Found {len(packages)} packages to process")
+    add_subtask(6, f"✓ Found {len(packages)} packages")
     return packages
 
 
@@ -167,17 +166,25 @@ def generate_debian_metadata_for_package(
 
 def generate_debian_metadata(config: BuildConfig):
     """Generate Debian metadata for all packages in parallel."""
-    print_phase("Phase 7: Generating Debian metadata")
-    logger.info("info: generate Debian packaging scripts")
-
     packages = get_package_list(config)
 
     # Use thread pool for I/O-heavy bloom operations
     # Use half the CPU cores to avoid file system contention
     max_workers = max(1, os.cpu_count() // 2)
 
+    add_subtask(7, f"Generating metadata for {len(packages)} packages (using {max_workers} workers)...")
+
     failed_packages = []
     succeeded = 0
+
+    # Get display instance for progress bar
+    display = get_display()
+    progress_task = None
+    if display:
+        progress_task = display.create_progress_task(
+            "Generating Debian metadata",
+            total=len(packages)
+        )
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -199,11 +206,13 @@ def generate_debian_metadata(config: BuildConfig):
                 failed_packages.append((pkg_name, str(e)))
                 logger.error(f"  ✗ Exception for {pkg_name}: {e}")
 
-    logger.info(f"  Generated metadata for {succeeded}/{len(packages)} packages")
+            # Update progress
+            if display and progress_task:
+                display.update_progress(progress_task, advance=1)
 
     if failed_packages:
-        logger.warning(f"  {len(failed_packages)} packages failed metadata generation")
-        for pkg_name, error in failed_packages[:5]:  # Show first 5
-            logger.warning(f"    - {pkg_name}: {error[:80]}")
+        add_subtask(7, f"⚠ {len(failed_packages)} packages failed (see logs)")
+        for pkg_name, error in failed_packages[:3]:  # Show first 3
+            logger.warning(f"    - {pkg_name}: {error[:60]}")
 
-    logger.info("  ✓ Debian metadata generation complete")
+    add_subtask(7, f"✓ Generated metadata for {succeeded}/{len(packages)} packages")

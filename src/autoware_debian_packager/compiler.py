@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from .config import BuildConfig
-from .utils import logger, print_phase, run_command
+from .utils import logger, print_phase, run_command, add_subtask, get_display
 
 
 def build_workspace(config: BuildConfig):
@@ -14,11 +14,10 @@ def build_workspace(config: BuildConfig):
     detailed compilation logs saved to file.
     """
     if config.skip_colcon_build:
-        logger.info("info: skip compiling packages")
+        add_subtask(4, "Skipped (--skip-colcon-build)")
         return
 
-    print_phase("Phase 4: Compiling packages")
-    logger.info("info: compiling packages (this may take a while...)")
+    add_subtask(4, "Running colcon build (this may take a while...)")
 
     # Source ROS environment
     ros_setup = f"/opt/ros/{config.ros_distro}/setup.bash"
@@ -44,7 +43,7 @@ def build_workspace(config: BuildConfig):
 
     try:
         run_command(cmd, log_file=log_file)
-        logger.info("  ✓ Compilation complete")
+        add_subtask(4, "✓ Compilation complete")
     except subprocess.CalledProcessError as e:
         logger.error("Colcon build failed")
         logger.error(f"  See log: {log_file}")

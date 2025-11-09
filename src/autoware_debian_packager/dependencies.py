@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 from .config import BuildConfig
-from .utils import logger, print_phase, run_command
+from .utils import logger, print_phase, run_command, add_subtask, get_display
 
 
 def generate_rosdep_commands(config: BuildConfig) -> str:
@@ -41,30 +41,28 @@ def generate_rosdep_commands(config: BuildConfig) -> str:
 
 def update_package_lists(config: BuildConfig):
     """Run apt update to refresh package caches."""
-    logger.info("info: updating package lists...")
+    add_subtask(3, "Updating package lists...")
 
     cmd = ["sudo", "apt", "update"]
     log_file = config.log_dir / "apt_update.log"
 
     try:
         run_command(cmd, log_file=log_file, check=False)
-        logger.info("  ✓ Package lists updated")
+        add_subtask(3, "✓ Package lists updated")
     except subprocess.CalledProcessError:
-        logger.warning("warning: apt update had errors (continuing anyway)")
+        add_subtask(3, "⚠ apt update had errors (continuing anyway)")
 
 
 def install_dependencies(config: BuildConfig):
     """Install ROS dependencies for all packages in workspace."""
     if config.skip_rosdep_install:
-        logger.info("info: skip installing dependencies")
+        add_subtask(3, "Skipped (--skip-rosdep-install)")
         return
-
-    print_phase("Phase 3: Installing dependencies")
 
     # Update package lists first
     update_package_lists(config)
 
-    logger.info("info: installing dependencies...")
+    add_subtask(3, "Generating dependency install script...")
 
     # Generate install script
     try:
@@ -74,7 +72,7 @@ def install_dependencies(config: BuildConfig):
         raise
 
     if not install_commands.strip():
-        logger.info("  No dependencies to install")
+        add_subtask(3, "No dependencies to install")
         return
 
     # Save install script for reference
@@ -84,7 +82,7 @@ def install_dependencies(config: BuildConfig):
         f.write("set -eo pipefail\n\n")
         f.write(install_commands)
 
-    logger.debug(f"Install script saved to: {install_script_path}")
+    add_subtask(3, "Installing dependencies...")
 
     # Execute installation
     cmd = ["bash", str(install_script_path)]
@@ -92,7 +90,7 @@ def install_dependencies(config: BuildConfig):
 
     try:
         run_command(cmd, log_file=log_file)
-        logger.info("  ✓ Dependencies installed")
+        add_subtask(3, "✓ Dependencies installed")
     except subprocess.CalledProcessError as e:
         logger.error("Failed to install dependencies")
         logger.error(f"  See log: {log_file}")
