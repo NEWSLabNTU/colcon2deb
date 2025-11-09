@@ -92,8 +92,17 @@ export ROS_DISTRO=${ROS_DISTRO:-humble}
 # Set ROS installation prefix (can be overridden via environment variable)
 # Default: /opt/ros/${ROS_DISTRO}
 export ROS_INSTALL_PREFIX="${ROS_INSTALL_PREFIX:-/opt/ros/${ROS_DISTRO}}"
-echo "info: ROS_DISTRO=$ROS_DISTRO"
-echo "info: ROS_INSTALL_PREFIX=$ROS_INSTALL_PREFIX"
+
+# Helper function to print timestamped messages
+print_phase() {
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo ""
+    echo "[$timestamp] $1"
+}
+
+print_phase "Build Configuration"
+echo "  ROS Distribution: $ROS_DISTRO"
+echo "  Install Prefix: $ROS_INSTALL_PREFIX"
 
 # Set working directory to the parent of this script.
 cd "$script_dir"
@@ -137,28 +146,36 @@ make_pkg_config_dir() {
 export -f make_pkg_config_dir
 
 # Prepare the working directory
+print_phase "Phase 1: Preparing working directories"
 ./prepare.sh
 
 # Copy source files
+print_phase "Phase 2: Copying source files"
 ./copy-src.sh
 
 # Install dependencies
+print_phase "Phase 3: Installing dependencies"
 ./install-deps.sh
 
 # Compile the whole repository
+print_phase "Phase 4: Compiling packages"
 ./build-src.sh
 source "$colcon_work_dir/install/setup.bash"
 
 # Create a rosdep list file
+print_phase "Phase 5: Generating rosdep list"
 ./create-rosdep-list.sh
 
 # Create a Debian package list file
+print_phase "Phase 6: Creating package list"
 ./create-package-list.sh
 
 # Copy or generate Debian control/rules files
+print_phase "Phase 7: Generating Debian metadata"
 ./generate-debian-dir.sh
 
 # Build Debian packages
+print_phase "Phase 8: Building Debian packages"
 ./build-deb.sh
 
 # Since we're working directly in the output directory, packages are already in the right place

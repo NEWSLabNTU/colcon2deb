@@ -15,15 +15,49 @@ import atexit
 from pathlib import Path
 
 
-def run_command(cmd, check=True):
-    """Run a shell command and return the result."""
-    print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, check=check, capture_output=True, text=True)
-    if result.stdout:
-        print(result.stdout)
-    if result.stderr:
-        print(result.stderr, file=sys.stderr)
-    return result
+def run_command(cmd, check=True, log_file=None, show_output=False):
+    """Run a shell command and return the result.
+
+    Args:
+        cmd: Command to run as a list
+        check: Raise exception on non-zero exit code
+        log_file: Path to log file for output (if None, output goes to terminal)
+        show_output: If True, show output even when log_file is set
+    """
+    if not log_file:
+        # No log file - show everything as before
+        print(f"Running: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=check, capture_output=True, text=True)
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
+        return result
+    else:
+        # Log to file, optionally show progress
+        if show_output:
+            print(f"Running: {' '.join(cmd)}")
+            print(f"  Output logged to: {log_file}")
+
+        with open(log_file, 'w') as log:
+            log.write(f"Command: {' '.join(cmd)}\n")
+            log.write("=" * 80 + "\n\n")
+            result = subprocess.run(cmd, check=check, capture_output=True, text=True)
+            if result.stdout:
+                log.write(result.stdout)
+            if result.stderr:
+                log.write("\n" + "=" * 80 + "\n")
+                log.write("STDERR:\n")
+                log.write(result.stderr)
+
+        # Show summary on error
+        if result.returncode != 0 and not show_output:
+            print(f"✗ Command failed with exit code {result.returncode}", file=sys.stderr)
+            print(f"  See log: {log_file}", file=sys.stderr)
+        elif show_output:
+            print(f"  ✓ Complete")
+
+        return result
 
 
 def download_dockerfile(url, cache_dir=None):
@@ -93,7 +127,7 @@ def download_dockerfile(url, cache_dir=None):
         sys.exit(1)
 
 
-def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None):
+def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None, log_dir=None):
     """Build Docker image from Dockerfile."""
     dockerfile_path = Path(dockerfile_path).resolve()
     if not dockerfile_path.exists():
@@ -116,9 +150,18 @@ def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None)
         image_name,
     ]
 
-    print(f"Building Docker image '{image_name}' from {dockerfile_path}")
-    print(f"Build context: {build_context}")
-    run_command(cmd)
+    print(f"Building Docker image '{image_name}'...")
+    print(f"  Dockerfile: {dockerfile_path}")
+    print(f"  Build context: {build_context}")
+
+    # Log docker build output to file if log_dir provided
+    log_file = None
+    if log_dir:
+        log_dir = Path(log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "docker_build.log"
+
+    run_command(cmd, log_file=log_file, show_output=True)
     return image_name
 
 
@@ -188,6 +231,25 @@ def main():
         )
         sys.exit(1)
 
+    # Get output directory early for logging
+    output_config = config.get("output", {})
+    if "directory" not in output_config:
+        print("Error: 'output.directory' not specified in config", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir = Path(output_config["directory"])
+    if not output_dir.is_absolute():
+        # Relative to config file
+        output_dir = Path(args.config).parent / output_dir
+
+    # Ensure absolute path for Docker
+    output_dir = output_dir.resolve()
+
+    # Create output directory and log directory if they don't exist
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_dir = output_dir / "log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
     # Determine the image to use
     if "dockerfile" in docker_config:
         dockerfile_value = docker_config["dockerfile"]
@@ -224,6 +286,7 @@ def main():
                 temp_dockerfile,
                 docker_config.get("image_name", "colcon2deb_builder"),
                 build_context=temp_context,
+                log_dir=log_dir,
             )
         else:
             # Local Dockerfile path
@@ -244,6 +307,7 @@ def main():
                 dockerfile_path,
                 docker_config.get("image_name", "colcon2deb_builder"),
                 build_context=build_context,
+                log_dir=log_dir,
             )
     else:
         image_name = docker_config["image"]
@@ -296,23 +360,7 @@ def main():
         )
         sys.exit(1)
 
-    # Get output directory configuration - this will be our main working directory
-    output_config = config.get("output", {})
-    if "directory" not in output_config:
-        print("Error: 'output.directory' not specified in config", file=sys.stderr)
-        sys.exit(1)
-
-    output_dir = Path(output_config["directory"])
-    if not output_dir.is_absolute():
-        # Relative to config file
-        output_dir = Path(args.config).parent / output_dir
-
-    # Ensure absolute path for Docker
-    output_dir = output_dir.resolve()
-
-    # Create output directory if it doesn't exist
-    output_dir.mkdir(parents=True, exist_ok=True)
-
+    # output_dir was already set up earlier for logging
     # The build_deb directory will be created inside the output directory
     # Users will find packages in output_dir/dist/
 

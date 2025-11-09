@@ -34,6 +34,10 @@ copy_or_create_debian_dir() {
 	    set -Eeuo pipefail
 	    cd "$pkg_config_dir"
 
+	    # Fix bloom FileExistsError with .config directory
+	    # Bloom tries to create ~/.config but may fail if it exists as a file or has wrong permissions
+	    mkdir -p "$HOME/.config" 2>/dev/null || true
+
 	    # Create bloom.conf to set InstallationPrefix variable
 	    # This variable is used in the rules.em template
 	    cat > "$pkg_config_dir/bloom.conf" <<EOF
