@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 colcon2deb = "colcon2deb:main"
+autoware-deb-builder = "autoware_debian_packager.main:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -35,7 +36,7 @@ sources = {"" = "."}
 [tool.hatch.build.targets.wheel]
 include = [
     "colcon2deb.py",
-    "helper/**/*",
+    "src/autoware_debian_packager/**/*.py",
     "config/**/*",
     "docker/**/*",
     "templates/**/*",
@@ -47,10 +48,12 @@ exclude = [
     "examples/**/*",
 ]
 
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
 [tool.hatch.build.targets.sdist]
 include = [
     "colcon2deb.py",
-    "helper/**/*",
     "config/**/*",
     "docker/**/*",
     "templates/**/*",

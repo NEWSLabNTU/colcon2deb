@@ -327,14 +327,14 @@ def main():
     # Get the script directory (where this script is located)
     script_dir = Path(__file__).resolve().parent
 
-    # Helper directory must be in the same directory as this script
-    helper_dir = script_dir / "helper"
-
-    if not helper_dir.exists():
-        print("Error: Helper scripts directory not found", file=sys.stderr)
-        print(f"Expected at: {helper_dir}", file=sys.stderr)
+    # Check if autoware_debian_packager package exists
+    # It should be in src/autoware_debian_packager/
+    packager_src = script_dir / "src" / "autoware_debian_packager"
+    if not packager_src.exists():
+        print("Error: autoware_debian_packager package not found", file=sys.stderr)
+        print(f"Expected at: {packager_src}", file=sys.stderr)
         print(
-            "Helper directory must be in the same directory as colcon2deb.py",
+            "Package source must be in src/autoware_debian_packager/",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -376,6 +376,7 @@ def main():
     print(f"  Install Prefix: {install_prefix}")
 
     # Prepare Docker run command
+    # Mount the entire colcon2deb source so the package can be installed in the container
     docker_cmd = [
         "docker",
         "run",
@@ -394,14 +395,41 @@ def main():
         "-v",
         f"{packages_dir}:/config",
         "-v",
-        f"{helper_dir}:/helper",
+        f"{script_dir}:/colcon2deb_src:ro",
         "-v",
         f"{output_dir}:/output",
         image_name,
-        "/helper/entry.sh",
-        f"--uid={uid}",
-        f"--gid={gid}",
-        f"--output=/output",
+        "bash",
+        "-c",
+        f"""
+        set -e
+        # Create user for specified uid/gid
+        groupadd -g {gid} ubuntu 2>/dev/null || true
+        useradd -m -u {uid} -g {gid} ubuntu 2>/dev/null || true
+        usermod -aG sudo ubuntu 2>/dev/null || true
+        passwd -d ubuntu 2>/dev/null || true
+
+        # Fix permissions
+        chown -R ubuntu:ubuntu /workspace
+
+        # Install the Python package
+        cd /colcon2deb_src
+        pip3 install -q . || {{
+            echo "Error: Failed to install autoware_debian_packager" >&2
+            exit 1
+        }}
+
+        # Run the builder as ubuntu user
+        sudo -u ubuntu bash -c "
+            set -e
+            rosdep update
+            python3 -m autoware_debian_packager.main \\
+                --workspace=/workspace \\
+                --output=/output \\
+                --ros-distro={ros_distro} \\
+                --install-prefix={install_prefix}
+        "
+        """,
     ]
 
     # Add nvidia runtime if available and requested in config
@@ -415,7 +443,7 @@ def main():
     print(f"  Workspace directory: {workspace_dir} -> /workspace")
     print(f"  Packages config directory: {packages_dir} -> /config")
     print(f"  Output directory: {output_dir} -> /output")
-    print(f"  Helper directory: {helper_dir} -> /helper")
+    print(f"  Package source: {script_dir} -> /colcon2deb_src (read-only)")
     print(f"  Using image: {image_name}")
     print(f"\n  Build artifacts will be in: {output_dir}/")
     print(f"  Final .deb packages will be in: {output_dir}/dist/")
