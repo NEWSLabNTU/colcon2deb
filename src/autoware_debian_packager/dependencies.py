@@ -17,8 +17,34 @@ def generate_rosdep_commands(config: BuildConfig) -> str:
     # Source ROS setup to get rosdep environment
     ros_setup = f"/opt/ros/{config.ros_distro}/setup.bash"
 
-    # Generate rosdep resolve commands for all packages
+    # First, try to detect which packages can't be resolved
     # Note: Don't use 'set -u' because ROS setup.bash has unbound variables
+    detect_cmd = [
+        "bash",
+        "-c",
+        f"""
+        source {ros_setup}
+        cd {config.colcon_work_dir}/src
+
+        # Run rosdep once to see if there are unresolvable packages
+        rosdep install --from-paths . --ignore-src --simulate --default-yes 2>&1 | \\
+            grep "Cannot locate rosdep definition for" | \\
+            sed 's/.*\\[\\(.*\\)\\].*/\\1/' || true
+        """
+    ]
+
+    result = run_command(detect_cmd, capture_output=True, check=False)
+    skip_keys = result.stdout.strip().split('\n') if result.stdout.strip() else []
+
+    # Build skip-keys argument
+    skip_args = ""
+    if skip_keys:
+        logger.debug(f"Skipping unresolvable rosdep keys: {', '.join(skip_keys)}")
+        for key in skip_keys:
+            if key:  # Skip empty strings
+                skip_args += f" --skip-keys {key}"
+
+    # Generate rosdep resolve commands for all packages
     cmd = [
         "bash",
         "-c",
@@ -27,9 +53,9 @@ def generate_rosdep_commands(config: BuildConfig) -> str:
         source {ros_setup}
         cd {config.colcon_work_dir}/src
 
-        # Get all package dependencies
+        # Get all package dependencies, skipping unresolvable keys
         # Use grep with || true to avoid exit code 1 when no matches
-        rosdep install --from-paths . --ignore-src --simulate --default-yes 2>&1 | \\
+        rosdep install --from-paths . --ignore-src --simulate --default-yes{skip_args} 2>&1 | \\
             (grep "^apt-get install" || true) | \\
             sed 's/^/sudo /'
         """
