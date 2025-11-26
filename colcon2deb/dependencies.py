@@ -27,7 +27,7 @@ def generate_rosdep_commands(config: BuildConfig) -> str:
 
         # Run rosdep once to see if there are unresolvable packages
         # Output is like: "package_name: Cannot locate rosdep definition for [key_name]"
-        rosdep install --from-paths . --ignore-src --simulate --default-yes 2>&1 | \
+        rosdep install --from-paths . --ignore-src --rosdistro={config.ros_distro} --simulate --default-yes 2>&1 | \
             grep "Cannot locate rosdep definition for" | \
             sed 's/.*Cannot locate rosdep definition for \[\(.*\)\].*/\1/' || true
         """
@@ -65,16 +65,19 @@ def generate_rosdep_commands(config: BuildConfig) -> str:
         source {ros_setup}
         cd {config.colcon_work_dir}/src
 
+        # Save full rosdep output for debugging
+        rosdep install --from-paths . --ignore-src --rosdistro={config.ros_distro} --simulate --default-yes{skip_args} 2>&1 | tee /output/log/rosdep_full_output.log
+
         # Get all package dependencies using --simulate, skipping unresolvable keys
-        # rosdep --simulate outputs indented lines like:  apt-get install -y pkg1 pkg2
+        # rosdep --simulate outputs lines like:  sudo -H apt-get install -y pkg1
         # Use || true to prevent grep from failing when no matches found
-        packages=$(rosdep install --from-paths . --ignore-src --simulate --default-yes{skip_args} 2>&1 | \
-            grep -E "^[[:space:]]*apt-get install" || true)
+        packages=$(cat /output/log/rosdep_full_output.log | \
+            grep -E "sudo.*apt-get install" || true)
 
         # Extract package names from all install lines
         if [ -n "$packages" ]; then
             packages=$(echo "$packages" | \
-                sed 's/^[[:space:]]*apt-get install[[:space:]]*-y[[:space:]]*//' | \
+                sed 's/^.*apt-get install[[:space:]]*-y[[:space:]]*//' | \
                 tr '\n' ' ' | \
                 sed 's/[[:space:]]\+/ /g' | \
                 sed 's/^[[:space:]]*//' | \
