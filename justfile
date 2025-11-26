@@ -9,17 +9,14 @@ default:
     @echo 'just build'
     @echo '    Build Python wheel package for release.'
     @echo ''
-    @echo 'just clean'
-    @echo '    Clean up build artifacts.'
-    @echo ''
-    @echo 'just build-workspace WORKSPACE OUTPUT [OPTIONS]'
-    @echo '    Build Debian packages from workspace (using Python builder).'
-    @echo ''
-    @echo 'just build-example EXAMPLE'
-    @echo '    Build packages for an example (autoware-2025.02-amd64, etc).'
+    @echo 'just install'
+    @echo '    Install the wheel package.'
     @echo ''
     @echo 'just install-dev'
     @echo '    Install package in development mode.'
+    @echo ''
+    @echo 'just clean'
+    @echo '    Clean up build artifacts.'
     @echo ''
     @echo 'just test'
     @echo '    Run tests.'
@@ -32,6 +29,21 @@ build:
 
 # Alias for build
 wheel: build
+
+# Install the wheel package
+install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Build wheel if it doesn't exist
+    if [ ! -f dist/colcon2deb-{{VERSION}}-py3-none-any.whl ]; then
+        echo "Wheel not found, building..."
+        just build
+    fi
+
+    echo "Installing wheel package..."
+    uv pip install dist/colcon2deb-{{VERSION}}-py3-none-any.whl
+    echo "Installed successfully. Use 'colcon2deb --help' to test."
 
 # Install package in development mode
 install-dev:
