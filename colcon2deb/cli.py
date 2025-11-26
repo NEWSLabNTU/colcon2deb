@@ -359,17 +359,41 @@ def main():
     # Get the script directory (where this script is located)
     script_dir = Path(__file__).resolve().parent
 
-    # Check if autoware_debian_packager package exists
-    # It should be in src/autoware_debian_packager/
-    packager_src = script_dir / "src" / "autoware_debian_packager"
-    if not packager_src.exists():
-        print("Error: autoware_debian_packager package not found", file=sys.stderr)
-        print(f"Expected at: {packager_src}", file=sys.stderr)
-        print(
-            "Package source must be in src/autoware_debian_packager/",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    # Determine the colcon2deb source directory and installation mode
+    # Try development mode first: Check if we're in the repo (colcon2deb/ dir exists at same level as this script)
+    # The script is in colcon2deb/cli.py, so script_dir is colcon2deb/
+    # Parent of script_dir is the repo root
+    repo_root = script_dir.parent
+    packager_src = repo_root / "colcon2deb"
+    is_dev_mode = False
+
+    if packager_src.exists() and (repo_root / "pyproject.toml").exists():
+        # Development mode - use the repository root which has pyproject.toml
+        colcon2deb_src = repo_root
+        is_dev_mode = True
+    else:
+        # Wheel installation - locate the installed package
+        try:
+            import importlib.util
+            spec = importlib.util.find_spec("colcon2deb")
+            if spec is None or spec.origin is None:
+                raise ImportError("Package not found")
+
+            # Get package location in site-packages
+            pkg_init = Path(spec.origin).resolve()
+            packager_src = pkg_init.parent
+
+            # For wheel mode, mount the package directory itself
+            # PYTHONPATH will need to point to the parent of the mounted package
+            colcon2deb_src = packager_src
+            is_dev_mode = False
+
+        except (ImportError, AttributeError) as e:
+            print("Error: colcon2deb package not found", file=sys.stderr)
+            print(f"Tried development mode at: {repo_root / 'colcon2deb'}", file=sys.stderr)
+            print("Tried importlib but package is not installed", file=sys.stderr)
+            print(f"Details: {e}", file=sys.stderr)
+            sys.exit(1)
 
     # Get packages configuration directory
     packages_config = config.get("packages", {})
@@ -409,7 +433,8 @@ def main():
         print(f"  Install Prefix: {install_prefix}")
 
     # Prepare Docker run command
-    # Mount the entire colcon2deb source so the package can be installed in the container
+    # Development mode: mount repo and pip install
+    # Wheel mode: mount site-packages and use PYTHONPATH
     docker_cmd = [
         "docker",
         "run",
@@ -428,13 +453,17 @@ def main():
         "-v",
         f"{packages_dir}:/config",
         "-v",
-        f"{script_dir}:/colcon2deb_src:ro",
+        f"{colcon2deb_src}:/opt/colcon2deb_pkg/colcon2deb:ro",
         "-v",
         f"{output_dir}:/output",
         image_name,
         "bash",
         "-c",
-        f"""
+    ]
+
+    if is_dev_mode:
+        # Development mode: install from source
+        bash_script = f"""
         set -e
         # Create user for specified uid/gid
         groupadd -g {gid} ubuntu 2>/dev/null || true
@@ -445,25 +474,60 @@ def main():
         # Fix permissions
         chown -R ubuntu:ubuntu /workspace
 
-        # Install the Python package
-        cd /colcon2deb_src
-        pip3 install -q . || {{
-            echo "Error: Failed to install autoware_debian_packager" >&2
+        # Install the Python package from source in editable mode
+        cd /opt/colcon2deb_pkg
+        pip3 install -e . || {{
+            echo "Error: Failed to install colcon2deb" >&2
             exit 1
         }}
+
+        # Initialize rosdep (must be done as root)
+        sudo rosdep init || true  # Ignore if already initialized
 
         # Run the builder as ubuntu user
         sudo -u ubuntu bash -c "
             set -e
             rosdep update
-            python3 -m autoware_debian_packager.main \\
+            python3 -m colcon2deb.main \\
                 --workspace=/workspace \\
                 --output=/output \\
                 --ros-distro={ros_distro} \\
                 --install-prefix={install_prefix}
         "
-        """,
-    ]
+        """
+    else:
+        # Wheel mode: use PYTHONPATH to access mounted package
+        bash_script = f"""
+        set -e
+        # Create user for specified uid/gid
+        groupadd -g {gid} ubuntu 2>/dev/null || true
+        useradd -m -u {uid} -g {gid} ubuntu 2>/dev/null || true
+        usermod -aG sudo ubuntu 2>/dev/null || true
+        passwd -d ubuntu 2>/dev/null || true
+
+        # Fix permissions
+        chown -R ubuntu:ubuntu /workspace
+
+        # Install dependencies
+        pip3 install pyyaml rich docker requests
+
+        # Initialize rosdep (must be done as root)
+        sudo rosdep init || true  # Ignore if already initialized
+
+        # Run the builder as ubuntu user with PYTHONPATH
+        sudo -u ubuntu bash -c "
+            set -e
+            export PYTHONPATH=/opt/colcon2deb_pkg:$PYTHONPATH
+            rosdep update
+            python3 -m colcon2deb.main \\
+                --workspace=/workspace \\
+                --output=/output \\
+                --ros-distro={ros_distro} \\
+                --install-prefix={install_prefix}
+        "
+        """
+
+    docker_cmd.append(bash_script)
 
     # Add nvidia runtime if available and requested in config
     use_nvidia = build_config.get("use_nvidia_runtime", False)
@@ -474,10 +538,12 @@ def main():
     # Run the container
     print(f"{Colors.CYAN}Building packages...{Colors.RESET}")
     if verbose:
+        mode_str = "development" if is_dev_mode else "wheel (PYTHONPATH)"
+        print(f"  Mode: {mode_str}")
         print(f"  Workspace directory: {workspace_dir} -> /workspace")
         print(f"  Packages config directory: {packages_dir} -> /config")
         print(f"  Output directory: {output_dir} -> /output")
-        print(f"  Package source: {script_dir} -> /colcon2deb_src (read-only)")
+        print(f"  Package source: {colcon2deb_src} -> /opt/colcon2deb_pkg/colcon2deb (read-only)")
         print(f"  Using image: {image_name}")
 
     # Capture container output to log file
