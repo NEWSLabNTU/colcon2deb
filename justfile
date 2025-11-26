@@ -42,7 +42,7 @@ install:
     fi
 
     echo "Installing wheel package..."
-    uv pip install dist/colcon2deb-{{VERSION}}-py3-none-any.whl
+    pip install dist/colcon2deb-{{VERSION}}-py3-none-any.whl
     echo "Installed successfully. Use 'colcon2deb --help' to test."
 
 # Install package in development mode
