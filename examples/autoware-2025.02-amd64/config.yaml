@@ -3,7 +3,7 @@ version: 1
 # Docker configuration
 docker:
   # Always prefer remote URLs to avoid maintaining Dockerfiles locally
-  dockerfile: https://raw.githubusercontent.com/NEWSLabNTU/autoware-build-images/refs/heads/main/2025.02/amd64/Dockerfile
+  dockerfile: Dockerfile
 
   # Optional: Custom image name for caching
   image_name: autoware-2025.02-builder
