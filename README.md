@@ -32,71 +32,42 @@ graph TD
 
 ## Installation
 
-### For Debian/Ubuntu Users (Recommended)
-
-Download and install the pre-built Debian package from the [Releases page](https://github.com/NEWSLabNTU/colcon2deb/releases/tag/v0.2.0):
-
-```bash
-# Download the .deb package
-wget https://github.com/NEWSLabNTU/colcon2deb/releases/download/v0.2.0/colcon2deb_0.2.0-1_all.deb
-
-# Install the package
-sudo apt install ./colcon2deb_0.2.0-1_all.deb
-```
-
-After installation, the `colcon2deb` command will be available system-wide.
-
-### For Other Systems
-
-For non-Debian/Ubuntu systems, use uv to run colcon2deb:
+### From Source
 
 ```bash
 # Clone the repository
 git clone https://github.com/NEWSLabNTU/colcon2deb.git
 cd colcon2deb
 
-# Install uv (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# Build the wheel package
+just build
 
-# Set up environment
-uv sync
-
-# Run colcon2deb
-uv run colcon2deb --help
+# Install the wheel
+just install
 ```
 
-### Building from Source
-
-If you want to build the Debian package yourself:
-
-```bash
-# Clone the repository
-git clone https://github.com/NEWSLabNTU/colcon2deb.git
-cd colcon2deb
-
-# Build the Debian package
-make deb
-
-# Install the package
-sudo apt install ./dist/colcon2deb_0.2.0-1_all.deb
-```
+The `colcon2deb` command will be available in your PATH after installation.
 
 ## Quick Start
 
-### Using Example Build Scripts
+### Using Example Configurations
 
-The easiest way to get started is using the provided example build scripts:
+The easiest way to get started is using the provided examples with justfile automation:
 
 ```bash
 # Navigate to an example directory
-cd examples/autoware-0.45.1-amd64
+cd examples/autoware-2025.02-amd64
 
-# Run the build script (clones Autoware and builds packages)
-./build.sh
+# Prepare the workspace (clone Autoware source)
+git clone --branch 2025.02-ws https://github.com/NEWSLabNTU/autoware.git source
+cd source && vcs import src < autoware.repos && cd ..
+
+# Build using justfile
+just build
 ```
 
-The build script will:
-1. Clone the appropriate Autoware branch
+The justfile will:
+1. Build the Docker image if needed
 2. Run colcon2deb with the pre-configured settings
 3. Output Debian packages to the `build/` directory
 
@@ -104,30 +75,45 @@ The build script will:
 
 1. **Prepare Your Colcon Workspace**
 
-```bash
-# Example using Autoware
-git clone https://github.com/autowarefoundation/autoware.git
-cd autoware
-git checkout 2025.02
+Create a ROS 2 workspace with your packages:
 
-# Import dependencies
-mkdir src
-vcs import src < autoware.repos
+```
+ros_ws/
+├── src/
+│   ├── my_package/
+│   │   ├── package.xml
+│   │   ├── CMakeLists.txt
+│   │   └── ...
+│   └── another_package/
+│       ├── package.xml
+│       └── ...
+└── ...
 ```
 
-2. **Create a Configuration File**
+2. **Create a Dockerfile**
+
+```dockerfile
+FROM ros:humble-ros-base
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    && rm -rf /var/lib/apt/lists/*
+
+# Initialize rosdep
+RUN rosdep init || true
+```
+
+3. **Create a Configuration File**
 
 ```yaml
 # config.yaml
 version: 1
 
 docker:
-  # Option 1: Use a remote Dockerfile
-  dockerfile: https://raw.githubusercontent.com/NEWSLabNTU/autoware-build-images/main/0.45.1/amd64/Dockerfile
-  image_name: autoware-builder
-  
-  # Option 2: Use a pre-built image
-  # image: ros:humble-ros-base
+  dockerfile: Dockerfile
+  image_name: my-builder
 
 output:
   directory: ./build
@@ -137,18 +123,12 @@ packages:
 
 build:
   ros_distro: humble
-  parallel_jobs: 8
-  skip_tests: true
 ```
 
-3. **Run colcon2deb**
+4. **Run colcon2deb**
 
 ```bash
-# If installed via Debian package
-colcon2deb --workspace /path/to/autoware --config config.yaml
-
-# If using uv
-uv run colcon2deb --workspace /path/to/autoware --config config.yaml
+colcon2deb --workspace ros_ws/ --config config.yaml
 ```
 
 ## Configuration
@@ -163,11 +143,9 @@ colcon2deb supports multiple Docker configuration options:
 
 ### Build Options
 
-| Option          | Description                     | Default          |
-|-----------------|---------------------------------|------------------|
-| `ros_distro`    | ROS distribution to use         | Auto-detected    |
-| `parallel_jobs` | Number of parallel build jobs   | System CPU count |
-| `skip_tests`    | Skip running tests during build | false            |
+| Option       | Description              | Default       |
+|--------------|--------------------------|---------------|
+| `ros_distro` | ROS distribution to use  | humble        |
 
 ### Package Overrides
 
@@ -188,32 +166,25 @@ debian-overrides/
 
 ```bash
 cd examples/autoware-0.45.1-amd64
-./build.sh
+# Prepare workspace (see example README.md)
+just build
 ```
 
 ### Autoware 2025.02
 
 ```bash
 cd examples/autoware-2025.02-amd64
-./build.sh
+# Prepare workspace (see example README.md)
+just build
 ```
 
 Both examples include:
 - Pre-configured `config.yaml`
-- Build script that clones Autoware
+- `Dockerfile` with required dependencies
+- `justfile` for build automation
 - Package-specific overrides in `debian-overrides/`
 
-## System Requirements
-
-- Python >= 3.10
-- Docker or Docker CE
-- python3-yaml, python3-docker, python3-requests (installed automatically with Debian package)
-
-## Known Issues
-
-- Large workspaces may take significant time to build
-- Consider using `skip_tests: true` in configuration to speed up builds
-- Docker permission errors: Add user to docker group with `sudo usermod -aG docker $USER`
+**Note**: Each example requires workspace preparation (cloning source code). See the `README.md` in each example directory for detailed instructions.
 
 ## Development
 
@@ -222,21 +193,6 @@ For developers and contributors, please see the [Development Guide](DEVELOPMENT.
 - Building and testing
 - Project structure
 - Contributing guidelines
-
-## Docker Images
-
-Pre-configured Docker images for various architectures are available at:
-https://github.com/NEWSLabNTU/autoware-build-images
-
-Supported configurations:
-- Ubuntu 22.04 with ROS 2 Humble
-- Architectures: amd64, arm64, jetpack
-- Autoware versions: 0.45.1, 2025.02
-
-## Support
-
-For issues, feature requests, and contributions, please visit:
-https://github.com/NEWSLabNTU/colcon2deb
 
 ## License
 
