@@ -226,7 +226,7 @@ def main():
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Show verbose output including Docker build details",
+        help="Show verbose output including real-time Docker container logs and detailed build progress",
     )
 
     # Parse arguments
@@ -463,6 +463,7 @@ def main():
 
     if is_dev_mode:
         # Development mode: install from source
+        verbose_flag = " --verbose" if verbose else ""
         bash_script = f"""
         set -e
         # Create user for specified uid/gid
@@ -492,11 +493,12 @@ def main():
                 --workspace=/workspace \\
                 --output=/output \\
                 --ros-distro={ros_distro} \\
-                --install-prefix={install_prefix}
+                --install-prefix={install_prefix}{verbose_flag}
         "
         """
     else:
         # Wheel mode: use PYTHONPATH to access mounted package
+        verbose_flag = " --verbose" if verbose else ""
         bash_script = f"""
         set -e
         # Create user for specified uid/gid
@@ -523,7 +525,7 @@ def main():
                 --workspace=/workspace \\
                 --output=/output \\
                 --ros-distro={ros_distro} \\
-                --install-prefix={install_prefix}
+                --install-prefix={install_prefix}{verbose_flag}
         "
         """
 
@@ -551,13 +553,36 @@ def main():
     container_log.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        with open(container_log, 'w') as log_file:
-            result = subprocess.run(
-                docker_cmd,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                check=True
-            )
+        if verbose:
+            # Verbose mode: Stream output to both terminal and log file
+            with open(container_log, 'w') as log_file:
+                process = subprocess.Popen(
+                    docker_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1  # Line-buffered
+                )
+
+                # Read and display output line by line
+                for line in process.stdout:
+                    print(line, end='', flush=True)  # Show in terminal
+                    log_file.write(line)  # Save to log
+
+                # Wait for process to complete
+                returncode = process.wait()
+                if returncode != 0:
+                    raise subprocess.CalledProcessError(returncode, docker_cmd)
+        else:
+            # Quiet mode (default): Only log to file
+            with open(container_log, 'w') as log_file:
+                result = subprocess.run(
+                    docker_cmd,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    check=True
+                )
+
         print(f"{Colors.BOLD}{Colors.BRIGHT_GREEN}✓ Build completed successfully!{Colors.RESET}")
         print(f"  Debian packages: {Colors.GREEN}{output_dir}/dist/{Colors.RESET}")
         if verbose:
@@ -565,8 +590,8 @@ def main():
     except subprocess.CalledProcessError as e:
         print(f"\n{Colors.BOLD}{Colors.BRIGHT_RED}✗ Build failed (exit code {e.returncode}){Colors.RESET}", file=sys.stderr)
         print(f"  See container log: {Colors.YELLOW}{container_log}{Colors.RESET}", file=sys.stderr)
-        # Show last 50 lines of container log on failure
-        if container_log.exists():
+        # Show last 50 lines of container log on failure (only in quiet mode, verbose already showed everything)
+        if not verbose and container_log.exists():
             print(f"\n{Colors.BRIGHT_YELLOW}--- Last 50 lines of container output ---{Colors.RESET}", file=sys.stderr)
             with open(container_log, 'r') as f:
                 lines = f.readlines()

@@ -21,6 +21,23 @@ build:
     # Run colcon2deb
     colcon2deb --workspace source --config config.yaml
 
+# Build with verbose output (show all logs in real-time)
+build-verbose:
+    #!/usr/bin/env bash
+    set -e
+
+    # Check if colcon2deb is available
+    if ! command -v colcon2deb &> /dev/null; then
+        echo "Error: colcon2deb is not available."
+        echo "Please install it first:"
+        echo "  cd ${PROJECT_ROOT}"
+        echo "  uv sync  # Install dependencies"
+        exit 1
+    fi
+
+    # Run colcon2deb with verbose flag
+    colcon2deb --workspace source --config config.yaml --verbose
+
 # Clean build artifacts
 clean:
     @echo "Cleaning build directory..."

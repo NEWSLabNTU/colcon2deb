@@ -171,29 +171,72 @@ def run_command(
     """
     logger.debug(f"Running: {' '.join(cmd)}")
 
+    # Check if verbose mode is enabled via display
+    display = get_display()
+    verbose = display.verbose if display else False
+
+    # Debug: Show verbose mode status
+    if display:
+        logger.debug(f"Display verbose mode: {verbose}")
+
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_file, 'w') as f:
-            f.write(f"Command: {' '.join(cmd)}\n")
-            f.write("=" * 80 + "\n\n")
 
-            result = subprocess.run(
-                cmd,
-                cwd=cwd,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
+        if verbose:
+            # Verbose mode: Stream output to both terminal and log file
+            with open(log_file, 'w') as f:
+                f.write(f"Command: {' '.join(cmd)}\n")
+                f.write("=" * 80 + "\n\n")
+                f.flush()
+
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=cwd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1  # Line-buffered
+                )
+
+                # Read and display output line by line
+                for line in process.stdout:
+                    print(line, end='', flush=True)  # Show in terminal
+                    f.write(line)  # Save to log
+
+                # Wait for process to complete
+                returncode = process.wait()
+
+                # Create a CompletedProcess-like result
+                result = subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=returncode,
+                    stdout=None,
+                    stderr=None
+                )
+        else:
+            # Quiet mode: Only log to file
+            with open(log_file, 'w') as f:
+                f.write(f"Command: {' '.join(cmd)}\n")
+                f.write("=" * 80 + "\n\n")
+
+                result = subprocess.run(
+                    cmd,
+                    cwd=cwd,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
 
         if result.returncode != 0:
             logger.error(f"Command failed with exit code {result.returncode}")
             logger.error(f"  See log: {log_file}")
             if check:
-                # Show last 20 lines of log
-                with open(log_file) as f:
-                    lines = f.readlines()
-                    for line in lines[-20:]:
-                        print(line, end='')
+                # Show last 20 lines of log (only in quiet mode, verbose already showed everything)
+                if not verbose:
+                    with open(log_file) as f:
+                        lines = f.readlines()
+                        for line in lines[-20:]:
+                            print(line, end='')
                 raise subprocess.CalledProcessError(result.returncode, cmd)
     else:
         result = subprocess.run(
