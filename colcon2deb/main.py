@@ -144,6 +144,7 @@ def main():
 
             start_phase(5, "Generating rosdep list")
             debian.create_rosdep_list(config)
+            debian.validate_rosdep_coverage(config)
             complete_phase(5)
 
             start_phase(6, "Creating package list")

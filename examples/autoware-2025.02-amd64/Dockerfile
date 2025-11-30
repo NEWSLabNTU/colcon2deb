@@ -39,6 +39,33 @@ RUN apt update -y && \
     dh-python \
     rsync \
     sudo \
+    python3-bloom \
+    libgoogle-glog-dev \
+    libgflags-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Fix libdrm and Mesa version conflicts by downgrading to Ubuntu 22.04 versions
+# The base image includes newer packages from kisak PPA for CUDA support,
+# but standard Ubuntu packages require exact version matches
+RUN apt update -y && \
+    apt install -y --allow-downgrades \
+        libdrm2=2.4.113-2~ubuntu0.22.04.1 \
+        libdrm-intel1=2.4.113-2~ubuntu0.22.04.1 \
+        libdrm-radeon1=2.4.113-2~ubuntu0.22.04.1 \
+        libdrm-amdgpu1=2.4.113-2~ubuntu0.22.04.1 \
+        libdrm-nouveau2=2.4.113-2~ubuntu0.22.04.1 \
+        libdrm-common=2.4.113-2~ubuntu0.22.04.1 \
+        libglapi-mesa=23.2.1-1ubuntu3.1~22.04.3 \
+        libgl1-mesa-dri=23.2.1-1ubuntu3.1~22.04.3 \
+        libglx-mesa0=23.2.1-1ubuntu3.1~22.04.3 \
+        libegl-mesa0=23.2.1-1ubuntu3.1~22.04.3 \
+        libgbm1=23.2.1-1ubuntu3.1~22.04.3 \
+        mesa-vulkan-drivers=23.2.1-1ubuntu3.1~22.04.3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cudnn_cmake_module for TensorRT support
+RUN apt update -y && \
+    apt install -y ros-humble-cudnn-cmake-module \
     && rm -rf /var/lib/apt/lists/*
 
 # Set default process to bash

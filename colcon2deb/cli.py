@@ -368,8 +368,9 @@ def main():
     is_dev_mode = False
 
     if packager_src.exists() and (repo_root / "pyproject.toml").exists():
-        # Development mode - use the repository root which has pyproject.toml
+        # Development mode - mount full repo including pyproject.toml for pip install -e
         colcon2deb_src = repo_root
+        colcon2deb_mount_target = "/opt/colcon2deb_pkg"
         is_dev_mode = True
     else:
         # Wheel installation - locate the installed package
@@ -383,9 +384,10 @@ def main():
             pkg_init = Path(spec.origin).resolve()
             packager_src = pkg_init.parent
 
-            # For wheel mode, mount the package directory itself
-            # PYTHONPATH will need to point to the parent of the mounted package
+            # For wheel mode, mount the package directory to a subpath
+            # PYTHONPATH will point to /opt/colcon2deb_pkg allowing import colcon2deb
             colcon2deb_src = packager_src
+            colcon2deb_mount_target = "/opt/colcon2deb_pkg/colcon2deb"
             is_dev_mode = False
 
         except (ImportError, AttributeError) as e:
@@ -453,7 +455,7 @@ def main():
         "-v",
         f"{packages_dir}:/config",
         "-v",
-        f"{colcon2deb_src}:/opt/colcon2deb_pkg/colcon2deb:ro",
+        f"{colcon2deb_src}:{colcon2deb_mount_target}:ro",
         "-v",
         f"{output_dir}:/output",
         image_name,
@@ -545,7 +547,7 @@ def main():
         print(f"  Workspace directory: {workspace_dir} -> /workspace")
         print(f"  Packages config directory: {packages_dir} -> /config")
         print(f"  Output directory: {output_dir} -> /output")
-        print(f"  Package source: {colcon2deb_src} -> /opt/colcon2deb_pkg/colcon2deb (read-only)")
+        print(f"  Package source: {colcon2deb_src} -> {colcon2deb_mount_target} (read-only)")
         print(f"  Using image: {image_name}")
 
     # Capture container output to log file
