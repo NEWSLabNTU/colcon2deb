@@ -1,3 +1,6 @@
 [submodule "examples/autoware-2025.02-amd64/autoware-debian-config"]
 	path = examples/autoware-2025.02-amd64/debian-overrides
 	url = https://github.com/NEWSLabNTU/autoware-debian-config.git
+[submodule "bloom"]
+	path = bloom
+	url = https://github.com/jerry73204/bloom.git
