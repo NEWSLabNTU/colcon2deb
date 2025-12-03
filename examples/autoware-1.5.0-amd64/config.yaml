@@ -1,0 +1,25 @@
+version: 1
+
+# Docker configuration
+docker:
+  # Always prefer remote URLs to avoid maintaining Dockerfiles locally
+  dockerfile: Dockerfile
+
+  # Optional: Custom image name for caching
+  image_name: autoware-1.5.0-builder
+
+# Output configuration with descriptive name
+output:
+  directory: ./build
+
+# Package configurations with descriptive name
+packages:
+  directory: ./debian-overrides
+
+# Build options
+build:
+  ros_distro: humble
+  parallel_jobs: 8
+  skip_tests: true
+  # Custom installation prefix for Autoware 1.5.0
+  install_prefix: /opt/autoware/1.5.0

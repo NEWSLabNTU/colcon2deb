@@ -1,0 +1,97 @@
+# Autoware 2025.02 AMD64 Debian Package Builder
+
+# Default recipe: list all available recipes
+default:
+    @just --list
+
+# Build Debian packages for Autoware 2025.02
+build:
+    #!/usr/bin/env bash
+    set -e
+
+    # Check if colcon2deb is available
+    if ! command -v colcon2deb &> /dev/null; then
+        echo "Error: colcon2deb is not available."
+        echo "Please install it first:"
+        echo "  cd ${PROJECT_ROOT}"
+        echo "  uv sync  # Install dependencies"
+        exit 1
+    fi
+
+    # Run colcon2deb
+    colcon2deb --workspace source --config config.yaml
+
+# Build with verbose output (show all logs in real-time)
+build-verbose:
+    #!/usr/bin/env bash
+    set -e
+
+    # Check if colcon2deb is available
+    if ! command -v colcon2deb &> /dev/null; then
+        echo "Error: colcon2deb is not available."
+        echo "Please install it first:"
+        echo "  cd ${PROJECT_ROOT}"
+        echo "  uv sync  # Install dependencies"
+        exit 1
+    fi
+
+    # Run colcon2deb with verbose flag
+    colcon2deb --workspace source --config config.yaml --verbose
+
+# Clean build artifacts
+clean:
+    @echo "Cleaning build directory..."
+    rm -rf build/
+    @echo "✓ Clean complete"
+
+# Rebuild Docker image
+rebuild-image:
+    @echo "Rebuilding Docker image..."
+    docker build -t autoware-2025.02-builder .
+    @echo "✓ Docker image rebuilt"
+
+# Clean and rebuild everything
+rebuild: clean rebuild-image build
+
+# Rebuild only Debian packages (skip colcon build)
+# Useful when source/colcon build is cached and only Debian generation needs to be redone
+rebuild-debian:
+    #!/usr/bin/env bash
+    set -e
+
+    # Clean debian-related directories in build/, but keep colcon sources and build cache
+    echo "Cleaning Debian build directories..."
+    if [ -d "build/build" ]; then
+        for pkg_dir in build/build/*/; do
+            if [ -d "$pkg_dir" ]; then
+                pkg_name=$(basename "$pkg_dir")
+                # Remove debian directory to force regeneration
+                rm -rf "$pkg_dir/debian"
+                # Remove deb files
+                rm -f build/build/*.deb
+                # Remove build output files
+                rm -f "$pkg_dir/build.out" "$pkg_dir/build.err" "$pkg_dir/gen_deb.out" "$pkg_dir/gen_deb.err"
+            fi
+        done
+    fi
+
+    # Clean release directory
+    rm -rf build/dist/*
+
+    # Clear tracking files
+    > build/log/failed_pkgs.txt 2>/dev/null || true
+    > build/log/successful_pkgs.txt 2>/dev/null || true
+    > build/log/skipped_pkgs.txt 2>/dev/null || true
+    > build/log/deb_pkgs.txt 2>/dev/null || true
+
+    echo "✓ Debian directories cleaned"
+
+    # Check if colcon2deb is available
+    if ! command -v colcon2deb &> /dev/null; then
+        echo "Error: colcon2deb is not available."
+        echo "Please install it first."
+        exit 1
+    fi
+
+    # Run colcon2deb with skip flags for early phases
+    colcon2deb --workspace source --config config.yaml --skip-copy --skip-deps --skip-build
