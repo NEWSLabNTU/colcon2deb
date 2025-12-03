@@ -1,79 +1,99 @@
 #!/usr/bin/env bash
+# Generate dependency installation commands using rosdep install --simulate
+#
+# This script uses rosdep's built-in simulation mode which:
+# - Resolves all dependencies in a single call
+# - Handles parallelism internally
+# - Outputs commands in a structured format
+#
+# Output: A bash script that installs apt and pip dependencies
+
 set -eo pipefail
 
 cd "$colcon_work_dir"
-# Temporarily unset -u for ROS setup script which references undefined variables
+
+# Source ROS setup (temporarily disable strict mode for ROS scripts)
 set +u
-source "/opt/ros/humble/setup.bash"
+source "/opt/ros/${ROS_DISTRO:-humble}/setup.bash"
 set -u
 
-echo "info: collecting rosdep keys from packages" >&2
-keys_count=$(rosdep keys --from-paths src --ignore-src 2>/dev/null | wc -l || echo 0)
-echo "info: found $keys_count dependency keys to resolve" >&2
+echo "info: resolving dependencies with rosdep install --simulate" >&2
 
-if [ "$keys_count" -eq 0 ]; then
-    echo "warning: no rosdep keys found, checking if src directory exists" >&2
-    if [ ! -d src ]; then
-        echo "error: src directory not found at $colcon_work_dir/src" >&2
-        exit 1
+# Run rosdep install in simulate mode
+# --reinstall: show all deps even if installed
+# --ignore-src: ignore packages in src/
+# -r: continue on errors (some keys may be missing)
+simulate_output=$(rosdep install --simulate --reinstall \
+    --from-paths src --ignore-src \
+    --rosdistro "${ROS_DISTRO:-humble}" \
+    -r 2>&1) || true
+
+# Save raw output for debugging
+echo "$simulate_output" > "$log_dir/rosdep_simulate.log" 2>/dev/null || true
+
+# Parse the simulate output to extract package names
+# Format is:
+#   #[apt] Installation commands:
+#     sudo -H apt-get install package1
+#     sudo -H apt-get install package2
+#   #[pip] Installation commands:
+#     sudo -H pip install pypkg1
+
+apt_packages=()
+pip_packages=()
+current_mode=""
+
+while IFS= read -r line; do
+    # Detect section headers
+    if [[ "$line" =~ ^\#\[apt\] ]]; then
+        current_mode="apt"
+        continue
+    elif [[ "$line" =~ ^\#\[pip\] ]]; then
+        current_mode="pip"
+        continue
     fi
-    ls -la src/ | head -10 >&2
+
+    # Extract package name from install commands
+    if [[ "$current_mode" == "apt" && "$line" =~ apt-get[[:space:]]+install[[:space:]]+(.+)$ ]]; then
+        pkg="${BASH_REMATCH[1]}"
+        # Remove any trailing whitespace
+        pkg="${pkg%% }"
+        apt_packages+=("$pkg")
+    elif [[ "$current_mode" == "pip" && "$line" =~ pip[[:space:]]+install[[:space:]]+(.+)$ ]]; then
+        pkg="${BASH_REMATCH[1]}"
+        pkg="${pkg%% }"
+        pip_packages+=("$pkg")
+    fi
+done <<< "$simulate_output"
+
+# Report counts
+echo "info: found ${#apt_packages[@]} apt packages, ${#pip_packages[@]} pip packages" >&2
+
+# Generate the install script
+echo "#!/usr/bin/env bash"
+echo "set -e  # Exit on error"
+echo ""
+
+if [ ${#apt_packages[@]} -gt 0 ]; then
+    echo "echo \"Installing ${#apt_packages[@]} APT packages...\" >&2"
+    echo -n "sudo apt-get install -y"
+    for pkg in "${apt_packages[@]}"; do
+        echo -n " $pkg"
+    done
+    echo ""
+    echo ""
 fi
 
-rosdep keys --from-paths src --ignore-src 2>/dev/null | \
-    sort -u | \
-    while read -r key; do
-	# Note: we redirect stderr to /dev/null per key, not for the whole pipeline
-	echo "rosdep resolve \"$key\" 2>/dev/null || echo \"warning: failed to resolve $key\" >&2"
-    done | \
-	parallel --group 2>/dev/null | \
-	awk '\
-BEGIN {
-  mode = ""
-  n_apt = 0
-  n_pip = 0
-}
+if [ ${#pip_packages[@]} -gt 0 ]; then
+    echo "echo \"Installing ${#pip_packages[@]} pip packages...\" >&2"
+    echo -n "pip install -U"
+    for pkg in "${pip_packages[@]}"; do
+        echo -n " $pkg"
+    done
+    echo ""
+    echo ""
+fi
 
-/^#apt$/ { mode = "apt" }
-/^#pip$/ { mode = "pip" }
-
-/^[^#]/ {
-  if (mode == "apt") {
-    apt[n_apt] = $0
-    n_apt += 1
-  } else if (mode == "pip") {
-    pip[n_pip] = $0
-    n_pip += 1
-  } else {
-    print "Error: Expect #apt or #pip before a key" > "/dev/stderr"
-    exit 1
-  }
-}
-
-END {
-  print "#!/usr/bin/env bash"
-  print "set -e  # Exit on error"
-
-  if (n_apt > 0) {
-    printf "echo \"Installing %d APT packages...\" >&2\n", n_apt
-    printf "sudo apt install -y"
-    for (i = 0; i < n_apt; i += 1) {
-      printf " %s", apt[i]
-    }
-    printf "\n"
-  }
-
-  if (n_pip > 0) {
-    printf "echo \"Installing %d pip packages...\" >&2\n", n_pip
-    printf "pip install -U"
-    for (i = 0; i < n_pip; i += 1) {
-          printf " %s", pip[i]
-    }
-    printf "\n"
-  }
-
-  if (n_apt == 0 && n_pip == 0) {
-    print "echo \"No dependencies to install\" >&2"
-  }
-}
-'
+if [ ${#apt_packages[@]} -eq 0 ] && [ ${#pip_packages[@]} -eq 0 ]; then
+    echo "echo \"No dependencies to install\" >&2"
+fi
