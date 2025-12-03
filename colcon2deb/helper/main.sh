@@ -172,11 +172,11 @@ print_phase "Phase 6: Creating package list"
 
 # Copy or generate Debian control/rules files
 print_phase "Phase 7: Generating Debian metadata"
-./generate-debian-dir.sh
+python3 "$script_dir/generate_debian_dir.py"
 
 # Build Debian packages
 print_phase "Phase 8: Building Debian packages"
-./build-deb.sh
+python3 "$script_dir/build_deb.py"
 
 # Since we're working directly in the output directory, packages are already in the right place
 echo "Packages are in: $release_dir"
