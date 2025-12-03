@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Tuple, Dict, Set, Optional
+import sys
 
 from .config import BuildConfig
 from .utils import logger, print_phase, ensure_dir, add_subtask, get_display
@@ -20,59 +21,29 @@ _cmake_package_cache: Dict[str, bool] = {}
 # Cache for package name to directory mapping
 _package_name_map: Dict[str, Path] = {}
 
-# Track which debs have been installed (to avoid reinstalling)
-_installed_debs: Set[str] = set()
+# Log file for Debian package building (set during build_packages_parallel)
+_debian_build_log: Optional[Path] = None
 
 
-def install_built_debs(config: BuildConfig) -> int:
-    """Install all newly built .deb files into the system.
+def log_debian_build(message: str, level: str = "info"):
+    """Log a message to both the logger and the Debian build log file.
 
-    This makes their shlibs information available to dpkg-shlibdeps
-    for resolving shared library dependencies in later packages.
-
-    Returns:
-        Number of debs installed
+    Args:
+        message: The message to log
+        level: Log level (info, warning, error, debug)
     """
-    global _installed_debs
+    global _debian_build_log
 
-    release_dir = config.release_dir
-    if not release_dir.exists():
-        return 0
+    # Log to regular logger
+    getattr(logger, level)(message)
 
-    # Find all debs not yet installed
-    all_debs = list(release_dir.glob("*.deb"))
-    new_debs = [d for d in all_debs if str(d) not in _installed_debs]
-
-    if not new_debs:
-        return 0
-
-    # Install all new debs at once using dpkg
-    logger.info(f"Installing {len(new_debs)} built .deb files for shlibs resolution...")
-
-    try:
-        # Use sudo dpkg --force-depends to install without checking dependencies
-        # (dependencies might not be installed yet, but we just need shlibs info)
-        cmd = ["sudo", "dpkg", "--force-depends", "-i"] + [str(d) for d in new_debs]
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300,  # 5 minute timeout
-        )
-
-        if result.returncode != 0:
-            # Non-fatal - just log and continue
-            logger.warning(f"dpkg install had issues (continuing): {result.stderr[:500]}")
-
-        # Mark as installed
-        for deb in new_debs:
-            _installed_debs.add(str(deb))
-
-        return len(new_debs)
-
-    except Exception as e:
-        logger.debug(f"Failed to install debs (non-fatal): {e}")
-        return 0
+    # Also log to dedicated Debian build log file
+    if _debian_build_log:
+        try:
+            with open(_debian_build_log, 'a') as f:
+                f.write(f"[{level.upper()}] {message}\n")
+        except Exception:
+            pass  # Don't fail on logging errors
 
 
 def build_package_name_map(config: BuildConfig) -> Dict[str, Path]:
@@ -390,15 +361,32 @@ def build_single_package(pkg_name: str, config: BuildConfig, lib_paths: Optional
     if existing_paths:
         lib_path_args = " ".join(f"-l{p}" for p in existing_paths)
 
+    # Update debhelper compat level to 12 for parallel build support
+    # Level 9 is deprecated; level 12+ enables parallel builds by default
+    compat_file = debian_dir / "compat"
+    if compat_file.exists():
+        try:
+            current_compat = compat_file.read_text().strip()
+            if current_compat.isdigit() and int(current_compat) < 12:
+                compat_file.write_text("12\n")
+                logger.debug(f"  Updated debian/compat from {current_compat} to 12")
+        except Exception as e:
+            logger.debug(f"  Could not update debian/compat: {e}")
+
     # Build the package using fakeroot debian/rules binary
+    # Source setup.bash first to set CMAKE_PREFIX_PATH for finding dependencies
     # Pass EXTRA_LIB_PATHS as a Make variable on the command line
-    # (environment variables don't automatically become Make variables)
     cmd = [
         "bash",
         "-c",
         f"""
         set -eo pipefail
         cd {pkg_work_dir}
+
+        # Source colcon install setup to set CMAKE_PREFIX_PATH and other env vars
+        # This allows CMake to find packages built by colcon (e.g., autoware_cmake)
+        source {config.colcon_work_dir}/install/setup.bash
+
         fakeroot debian/rules binary EXTRA_LIB_PATHS='{lib_path_args}'
         """
     ]
@@ -457,15 +445,25 @@ def build_single_package(pkg_name: str, config: BuildConfig, lib_paths: Optional
 
 
 def build_packages_parallel(config: BuildConfig) -> Dict[str, PackageBuildResult]:
-    """Build all Debian packages in strict dependency order with retry.
+    """Build all Debian packages in parallel.
+
+    Since colcon build has already compiled all packages and created all
+    required libraries, we can build Debian packages in parallel without
+    any dependency ordering. The colcon install/setup.bash provides all
+    needed headers and .so files.
 
     Uses ProcessPoolExecutor for CPU-intensive package building.
-    Builds packages in topological order to ensure dependencies are available.
-    Automatically retries failed packages after their dependencies succeed.
 
     Returns:
         Dictionary mapping package names to build results
     """
+    global _debian_build_log
+
+    # Set up dedicated log file for Debian package building
+    _debian_build_log = config.log_dir / "debian_packages.log"
+    with open(_debian_build_log, 'w') as f:
+        f.write("=== Debian Package Building Log ===\n\n")
+
     # Clear caches at start of build
     global _dependency_cache, _cmake_package_cache
     _dependency_cache = {}
@@ -489,28 +487,33 @@ def build_packages_parallel(config: BuildConfig) -> Dict[str, PackageBuildResult
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     packages = [line.strip() for line in result.stdout.split('\n') if line.strip()]
 
-    # Sort packages into dependency levels
-    levels = topological_sort_packages(packages, config)
-    logger.info(f"Building {len(packages)} packages in {len(levels)} dependency levels")
+    log_debian_build(f"Found {len(packages)} packages to build")
 
     # Use 1/4 of CPU cores for package building to prevent resource exhaustion
     max_workers = max(1, os.cpu_count() // 4)
 
-    add_subtask(8, f"Building {len(packages)} packages in {len(levels)} levels (using {max_workers} workers)...")
+    add_subtask(8, f"Building {len(packages)} packages (using {max_workers} workers)...")
+    log_debian_build(f"Using {max_workers} parallel workers")
 
     results = {}
-    failed_packages = set()
     succeeded = 0
     failed = 0
     skipped = 0
 
     # Initialize library search paths with system libraries and ROS libraries
+    # Since colcon already built everything, all .so files are in the install directory
     lib_paths = [
         "/usr/lib",
         "/usr/lib/x86_64-linux-gnu",
         "/opt/ros/humble/lib",
         str(config.colcon_work_dir / "install" / "lib"),
     ]
+
+    # Add all package install lib paths from colcon build
+    for pkg in packages:
+        pkg_install_lib = config.colcon_work_dir / "install" / pkg / "lib"
+        if pkg_install_lib.exists():
+            lib_paths.append(str(pkg_install_lib))
 
     # Get display instance for progress bar
     display = get_display()
@@ -521,115 +524,49 @@ def build_packages_parallel(config: BuildConfig) -> Dict[str, PackageBuildResult
             total=len(packages)
         )
 
-    # Build each level sequentially, packages within a level in parallel
-    for level_num, level in enumerate(levels):
-        logger.info(f"Building level {level_num + 1}/{len(levels)}: {len(level)} packages")
+    # Build all packages in parallel - no dependency ordering needed
+    # since colcon build already created all required libraries
+    log_debian_build("Starting parallel Debian package builds...")
 
-        # Filter out packages whose dependencies failed
-        buildable = []
-        for pkg in level:
-            deps = get_package_dependencies(pkg, config)
-            failed_deps = deps & failed_packages
-            if failed_deps:
-                logger.warning(f"  Skipping {pkg}: dependencies failed ({', '.join(list(failed_deps)[:3])}...)")
-                results[pkg] = PackageBuildResult(pkg, False, error=f"Dependency failed: {', '.join(failed_deps)}")
-                failed_packages.add(pkg)
-                failed += 1
-                if display and progress_task:
-                    display.update_progress(progress_task, advance=1)
-            else:
-                buildable.append(pkg)
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(build_single_package, pkg, config, lib_paths): pkg
+            for pkg in packages
+        }
 
-        if not buildable:
-            continue
+        for future in as_completed(futures):
+            pkg_name = futures[future]
+            try:
+                build_result = future.result()
+                results[pkg_name] = build_result
 
-        # Build this level in parallel
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(build_single_package, pkg, config, lib_paths): pkg
-                for pkg in buildable
-            }
-
-            for future in as_completed(futures):
-                pkg_name = futures[future]
-                try:
-                    build_result = future.result()
-                    results[pkg_name] = build_result
-
-                    if build_result.success:
-                        if build_result.deb_file and config.skipped_pkgs_file.exists():
-                            with open(config.skipped_pkgs_file, 'r') as f:
-                                if pkg_name in f.read():
-                                    skipped += 1
-                                else:
-                                    succeeded += 1
-                        else:
-                            succeeded += 1
+                if build_result.success:
+                    if build_result.deb_file and config.skipped_pkgs_file.exists():
+                        with open(config.skipped_pkgs_file, 'r') as f:
+                            if pkg_name in f.read():
+                                skipped += 1
+                                log_debian_build(f"Skipped (already built): {pkg_name}")
+                            else:
+                                succeeded += 1
+                                log_debian_build(f"Built successfully: {pkg_name}")
                     else:
-                        failed_packages.add(pkg_name)
-                        failed += 1
-
-                except Exception as e:
-                    logger.error(f"  ✗ Exception building {pkg_name}: {e}")
-                    results[pkg_name] = PackageBuildResult(pkg_name, False, error=str(e))
-                    failed_packages.add(pkg_name)
-                    failed += 1
-
-                # Update progress
-                if display and progress_task:
-                    display.update_progress(progress_task, advance=1)
-
-        # Update library paths with newly built packages for next level
-        for pkg in buildable:
-            if pkg in results and results[pkg].success:
-                # Add the lib directory from the built package's debian staging area
-                deb_pkg_name = f"ros-humble-{pkg.replace('_', '-')}"
-                pkg_lib_dir = config.get_pkg_work_dir(pkg) / "debian" / deb_pkg_name / "opt" / "ros" / "humble" / "lib"
-                if pkg_lib_dir.exists():
-                    lib_paths.append(str(pkg_lib_dir))
-
-                # Also add the colcon install lib path (where .so files are during colcon build)
-                pkg_install_lib = config.colcon_work_dir / "install" / pkg / "lib"
-                if pkg_install_lib.exists():
-                    lib_paths.append(str(pkg_install_lib))
-
-        # Install built debs to make their shlibs info available for dpkg-shlibdeps
-        # This allows later packages to resolve shared library dependencies correctly
-        installed_count = install_built_debs(config)
-        if installed_count > 0:
-            logger.debug(f"Installed {installed_count} debs for shlibs resolution")
-
-    # RETRY PHASE: Retry failed packages whose dependencies now all succeeded
-    retry_candidates = [
-        pkg for pkg in failed_packages
-        if not (get_package_dependencies(pkg, config) & failed_packages)
-        and results.get(pkg, PackageBuildResult(pkg, False)).error != "Debian directory not found"
-    ]
-
-    if retry_candidates:
-        logger.info(f"Retrying {len(retry_candidates)} packages after dependencies built...")
-        add_subtask(8, f"Retrying {len(retry_candidates)} packages...")
-
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(build_single_package, pkg, config, lib_paths): pkg
-                for pkg in retry_candidates
-            }
-
-            for future in as_completed(futures):
-                pkg_name = futures[future]
-                try:
-                    build_result = future.result()
-                    results[pkg_name] = build_result
-
-                    if build_result.success:
-                        failed_packages.remove(pkg_name)
-                        failed -= 1
                         succeeded += 1
-                        logger.info(f"  ✓ Retry succeeded: {pkg_name}")
-                except Exception as e:
-                    logger.error(f"  ✗ Retry failed for {pkg_name}: {e}")
-                    results[pkg_name] = PackageBuildResult(pkg_name, False, error=str(e))
+                        log_debian_build(f"Built successfully: {pkg_name}")
+                else:
+                    failed += 1
+                    log_debian_build(f"Failed: {pkg_name} - {build_result.error[:200] if build_result.error else 'Unknown error'}", "error")
+
+            except Exception as e:
+                log_debian_build(f"Exception building {pkg_name}: {e}", "error")
+                results[pkg_name] = PackageBuildResult(pkg_name, False, error=str(e))
+                failed += 1
+
+            # Update progress
+            if display and progress_task:
+                display.update_progress(progress_task, advance=1)
+
+    log_debian_build(f"\n=== Build Summary ===")
+    log_debian_build(f"Total: {len(packages)}, Built: {succeeded}, Skipped: {skipped}, Failed: {failed}")
 
     if failed > 0:
         add_subtask(8, f"⚠ {failed} packages failed (see logs)")

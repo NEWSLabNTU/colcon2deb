@@ -229,9 +229,35 @@ def main():
         help="Show verbose output including real-time Docker container logs and detailed build progress",
     )
 
+    # Skip flags for incremental rebuilds
+    parser.add_argument(
+        "--skip-copy",
+        action="store_true",
+        help="Skip copying source files (use existing sources in build/)",
+    )
+    parser.add_argument(
+        "--skip-deps",
+        action="store_true",
+        help="Skip dependency installation (use already installed deps)",
+    )
+    parser.add_argument(
+        "--skip-build",
+        action="store_true",
+        help="Skip colcon build step (use existing colcon build cache)",
+    )
+
     # Parse arguments
     args = parser.parse_args()
     verbose = args.verbose
+
+    # Build skip flags string for main.py
+    skip_flags = ""
+    if args.skip_copy:
+        skip_flags += " --skip-copy-src"
+    if args.skip_deps:
+        skip_flags += " --skip-rosdep-install"
+    if args.skip_build:
+        skip_flags += " --skip-colcon-build"
 
     # Load configuration
     config = load_config(args.config)
@@ -495,7 +521,7 @@ def main():
                 --workspace=/workspace \\
                 --output=/output \\
                 --ros-distro={ros_distro} \\
-                --install-prefix={install_prefix}{verbose_flag}
+                --install-prefix={install_prefix}{verbose_flag}{skip_flags}
         "
         """
     else:
@@ -527,7 +553,7 @@ def main():
                 --workspace=/workspace \\
                 --output=/output \\
                 --ros-distro={ros_distro} \\
-                --install-prefix={install_prefix}{verbose_flag}
+                --install-prefix={install_prefix}{verbose_flag}{skip_flags}
         "
         """
 
