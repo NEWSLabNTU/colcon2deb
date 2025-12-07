@@ -11,11 +11,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This project builds Debian packages for Autoware (autonomous driving platform) in isolated Docker containers.
+This project builds Debian packages from ROS 2 colcon workspaces in isolated Docker containers.
 
 **Package Management**: The project uses uv for Python dependency management and package building.
 
 **Architecture**: All build logic is implemented in Python modules. The `colcon2deb` package is mounted into Docker containers and installed on-the-fly.
+
+**Autoware Examples**: For Autoware-specific build configurations and examples, see [autoware-localrepo](https://github.com/NEWSLabNTU/autoware-localrepo).
 
 ## Key Commands
 
@@ -31,31 +33,13 @@ just install
 uv sync
 ```
 
-### Build Debian Packages for Autoware
+### Running colcon2deb
 ```bash
-# Navigate to example directory
-cd examples/autoware-2025.02-amd64
+# Basic usage
+colcon2deb --workspace /path/to/ros_ws --config config.yaml
 
-# Prepare the workspace (clone Autoware source)
-git clone --branch 2025.02-ws https://github.com/NEWSLabNTU/autoware.git source
-cd source && vcs import src < autoware.repos && cd ..
-
-# Build using justfile
-just build
-```
-
-**Note**: Examples use `justfile` for build automation. See `examples/*/justfile` for available commands.
-
-### Docker Image Management
-Docker images are defined in each example directory, not at the project root:
-
-```bash
-# Build Docker image for specific example
-cd examples/autoware-2025.02-amd64
-docker build -t autoware-2025.02-builder -f Dockerfile .
-
-# Or use justfile which handles image building
-just rebuild
+# See help
+colcon2deb --help
 ```
 
 ### Testing
@@ -82,16 +66,6 @@ uv run pytest tests/unit/test_colcon2deb.py
   - `debian.py` - Debian metadata generation
   - `packager.py` - Parallel package building
 - `templates/` - Templates for package generation
-- `examples/` - Example configurations with justfiles (each has its own Dockerfile)
-  - `autoware-0.45.1-amd64/` - Example for Autoware 0.45.1
-    - `justfile` - Build automation (build, clean, rebuild)
-    - `config.yaml` - Configuration file
-    - `Dockerfile` - Docker image definition
-    - `debian-overrides/` - Package-specific overrides
-    - `source/` - User prepares Autoware workspace here
-    - `README.md` - Setup and usage instructions
-  - `autoware-2025.02-amd64/` - Example for Autoware 2025.02
-    - Same structure as 0.45.1 example
 - `makedeb/` - Debian package build configuration
   - `PKGBUILD` - Package build script for makedeb
   - `colcon2deb` - Wrapper script for /usr/bin
@@ -102,7 +76,6 @@ uv run pytest tests/unit/test_colcon2deb.py
   - `troubleshooting-guide.md` - Common issues and solutions
   - `parallel-optimization.md` - Performance tuning
 - `pyproject.toml` - Python project configuration (uv compatible)
-- `Makefile` - Build automation (wheel, deb, clean)
 
 ### Build Process Flow
 1. `colcon2deb.cli` reads config and launches Docker container
@@ -153,30 +126,8 @@ uv run pytest tests/ -v
 - `colcon2deb/config.py` - BuildConfig dataclass
 - `pyproject.toml` - Project configuration and dependencies
 - `justfile` - Main build automation (build, install, clean)
-- `examples/*/Dockerfile` - Example-specific Docker images
-- `examples/*/justfile` - Example build automation
-- `examples/*/config.yaml` - Example configurations
-- `examples/*/README.md` - Setup instructions
 
 ## Common Development Tasks
-
-### Preparing Autoware Workspace for Examples
-Each example requires a prepared Autoware workspace in the `source/` directory:
-
-```bash
-cd examples/autoware-2025.02-amd64
-
-# Clone Autoware repository
-git clone --branch 2025.02-ws https://github.com/NEWSLabNTU/autoware.git source
-
-# Import all package dependencies
-cd source && vcs import src < autoware.repos && cd ..
-
-# Build using justfile
-just build
-```
-
-See `examples/*/README.md` for detailed instructions.
 
 ### Building and Installing colcon2deb
 ```bash
@@ -187,30 +138,22 @@ just build
 just install
 ```
 
-### Creating New Example Configuration
-1. Create directory in `examples/<name>/`
-2. Add `config.yaml` with Docker and build settings
-3. Create `Dockerfile` for the build environment
-4. Create `justfile` with build commands
-5. Add `debian-overrides/` for package-specific overrides
-
 ### Debugging Build Issues
 1. Check logs in `build/log/` directory:
    - `container.log` - Full container output
    - `rosdep_detection.log` - Rosdep key detection
    - `rosdep_full_output.log` - Full rosdep output
    - `colcon_build.log` - Colcon build output
-2. Run `just build` with verbose output
+2. Run with verbose output
 3. Test rosdep commands manually in the container
 
 ### Modifying Build Process
 - CLI changes: Edit `colcon2deb/cli.py`
 - Build orchestration: Edit `colcon2deb/main.py`
 - Dependency management: Edit `colcon2deb/dependencies.py`
-- Docker images: Edit Dockerfiles in `examples/*/Dockerfile`
 - Package configuration: Edit `pyproject.toml`
 
-## Known Issues and Recent Fixes
+## Known Issues and Fixes
 
 ### Rosdep Integration (Fixed)
 - **Issue**: rosdep wasn't detecting dependencies correctly
@@ -221,17 +164,6 @@ just install
   4. Fix grep pattern to match `sudo -H apt-get install -y` format
   5. Save full rosdep output to `rosdep_full_output.log` for debugging
 - **Result**: Successfully detects 130+ packages for installation
-
-### Autoware 2025.02 Build Requirements
-- **Docker Image**: Uses `ghcr.io/autowarefoundation/autoware-base:cuda-20250205` which includes CUDA 12.3, cuDNN 8.9.5, TensorRT 8.6.1
-- **System Dependencies Required**:
-  - Build tools: `parallel`, `fakeroot`, `debhelper`, `dh-python`, `rsync`, `sudo`
-  - System libraries: Various libraries installed via rosdep (see rosdep_full_output.log)
-- **Known Build Issues**:
-  - **libdrm Version Conflict**: The base image includes newer libdrm (2.4.122 from kisak PPA) but Ubuntu packages require exact version 2.4.113. Solution: Downgrade libdrm packages to Ubuntu 22.04 versions in Dockerfile with `--allow-downgrades` flag. See `examples/autoware-2025.02-amd64/Dockerfile` for the fix.
-  - `embree_vendor`: Requires `libxrandr-dev` for GLFW
-  - `tamagawa_imu_driver`: Has include path issues with can_msgs headers (may require source patching)
-  - `pointcloud_to_laserscan`, `ros2_socketcan`: Additional investigation needed
 
 ### Package Structure
 - Package renamed from `autoware_debian_packager` to `colcon2deb`
@@ -244,17 +176,21 @@ just install
 
 ```yaml
 # Basic configuration
-workspace_dir: /path/to/autoware/ws
+workspace_dir: /path/to/ros_ws
 output_dir: /path/to/output
-dockerfile: docker/0.45.1/amd64/Dockerfile
+dockerfile: Dockerfile
 
 # Or with remote Dockerfile
-workspace_dir: /path/to/autoware/ws
+workspace_dir: /path/to/ros_ws
 output_dir: /path/to/output
 dockerfile: https://example.com/Dockerfile
 
 # Or with prebuilt image
-workspace_dir: /path/to/autoware/ws
+workspace_dir: /path/to/ros_ws
 output_dir: /path/to/output
-image: colcon2deb:0.45.1-amd64
+image: my-builder:latest
 ```
+
+## Related Projects
+
+- [autoware-localrepo](https://github.com/NEWSLabNTU/autoware-localrepo) - Autoware build configurations and APT repository builder
