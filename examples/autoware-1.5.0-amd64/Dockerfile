@@ -73,5 +73,12 @@ RUN apt update -y && \
     apt install -y ros-humble-message-filters \
     && rm -rf /var/lib/apt/lists/*
 
+# Pre-install rosdep dependencies to speed up builds
+# These packages were extracted from build/log/rosdep_simulate.log
+COPY rosdep-packages.txt /tmp/rosdep-packages.txt
+RUN apt update -y && \
+    grep -v '^#' /tmp/rosdep-packages.txt | grep -v '^$' | xargs apt-get install -y --no-install-recommends || true && \
+    rm -rf /var/lib/apt/lists/* /tmp/rosdep-packages.txt
+
 # Set default process to bash
 CMD ["/bin/bash"]
