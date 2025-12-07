@@ -186,6 +186,10 @@ Both examples include:
 
 **Note**: Each example requires workspace preparation (cloning source code). See the `README.md` in each example directory for detailed instructions.
 
+### Autoware Local Repository
+
+For a complete Autoware packaging solution that combines colcon2deb with meta-packages (autoware-config, autoware-theme, autoware-data, etc.) and APT repository creation, see [autoware-localrepo](https://github.com/NEWSLabNTU/autoware-localrepo).
+
 ## Development
 
 For developers and contributors, please see the [Development Guide](DEVELOPMENT.md) for:
