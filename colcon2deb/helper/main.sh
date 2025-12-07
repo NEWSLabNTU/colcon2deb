@@ -3,7 +3,7 @@ set -e
 
 # Parse options using getopt
 OPTIONS=h
-LONGOPTIONS=help,skip-rosdep-install,skip-copy-src,skip-gen-rosdep-list,skip-colcon-build,skip-gen-debian,skip-build-deb,workspace:,output:
+LONGOPTIONS=help,skip-rosdep-install,skip-copy-src,skip-gen-rosdep-list,skip-colcon-build,skip-gen-debian,skip-build-deb,workspace:,output:,log-dir:
 PARSED=$(getopt --options "$OPTIONS" --longoptions "$LONGOPTIONS" --name "$0" -- "$@")
 
 # Check if getopt failed
@@ -23,6 +23,7 @@ export gen_debian=y
 export build_deb=y
 export workspace_dir=
 export output_dir=
+export log_dir=
 
 print_usage() {
     echo "Usage: $0 [OPTION]... --workspace=WORKSPACE_DIR --output=OUTPUT_DIR"
@@ -73,6 +74,10 @@ while true; do
 	    ;;
 	--output)
 	    output_dir="$2"
+	    shift 2
+	    ;;
+	--log-dir)
+	    log_dir="$2"
 	    shift 2
 	    ;;
 	--)
@@ -133,21 +138,26 @@ export pkg_build_dir="$top_work_dir/build"
 export check_dir="$release_dir"
 export final_output_dir="$release_dir"
 
-# Create timestamped log directory
-export log_timestamp=$(date '+%Y-%m-%d_%H-%M-%S')
-export log_base_dir="$top_work_dir/log"
-export log_dir="$log_base_dir/$log_timestamp"
-mkdir -p "$log_dir"
+# Use log_dir passed from host (already created by main.py)
+# If not provided, fall back to creating one (for standalone usage)
+if [ -z "$log_dir" ]; then
+    export log_timestamp=$(date '+%Y-%m-%d_%H-%M-%S')
+    export log_base_dir="$top_work_dir/log"
+    export log_dir="$log_base_dir/$log_timestamp"
+    mkdir -p "$log_dir"
 
-# Create/update 'latest' symlink
-rm -f "$log_base_dir/latest"
-ln -s "$log_timestamp" "$log_base_dir/latest"
+    # Create/update 'latest' symlink
+    rm -f "$log_base_dir/latest"
+    ln -s "$log_timestamp" "$log_base_dir/latest"
+fi
 
-# Log file paths with numbered prefixes
-export deb_pkgs_file="$log_dir/06-deb_pkgs.txt"
-export successful_pkgs_file="$log_dir/08-successful_pkgs.txt"
-export failed_pkgs_file="$log_dir/08-failed_pkgs.txt"
-export skipped_pkgs_file="$log_dir/08-skipped_pkgs.txt"
+# Log file paths
+# - Processing step logs have number prefixes (03-, 04-, etc.)
+# - Outcome files (*.txt) have no prefixes
+export deb_pkgs_file="$log_dir/deb_pkgs.txt"
+export successful_pkgs_file="$log_dir/successful_pkgs.txt"
+export failed_pkgs_file="$log_dir/failed_pkgs.txt"
+export skipped_pkgs_file="$log_dir/skipped_pkgs.txt"
 
 # export generate_debian_script="$script_dir/generate-debian.sh"
 export rosdep_gen_script="$script_dir/generate-rosdep-commands.sh"

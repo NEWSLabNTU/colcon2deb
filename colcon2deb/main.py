@@ -277,10 +277,22 @@ def main():
     # Ensure absolute path for Docker
     output_dir = output_dir.resolve()
 
-    # Create output directory and log directory if they don't exist
+    # Create output directory and timestamped log directory
     output_dir.mkdir(parents=True, exist_ok=True)
-    log_dir = output_dir / "log"
+    log_base_dir = output_dir / "log"
+    log_base_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create timestamped log directory
+    from datetime import datetime
+    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_dir = log_base_dir / log_timestamp
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create/update 'latest' symlink
+    latest_link = log_base_dir / "latest"
+    if latest_link.is_symlink() or latest_link.exists():
+        latest_link.unlink()
+    latest_link.symlink_to(log_timestamp)
 
     # Determine the image to use
     if "dockerfile" in docker_config:
@@ -434,6 +446,7 @@ def main():
         f"--uid={uid}",
         f"--gid={gid}",
         f"--output=/output",
+        f"--log-dir=/output/log/{log_timestamp}",
     ]
 
     # Add skip options if specified

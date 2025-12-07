@@ -5,7 +5,7 @@ script_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Parse options using getopt
 OPTIONS=h
-LONGOPTIONS=help,uid:,gid:,output:,skip-rosdep-install,skip-copy-src,skip-gen-rosdep-list,skip-colcon-build,skip-gen-debian,skip-build-deb
+LONGOPTIONS=help,uid:,gid:,output:,log-dir:,skip-rosdep-install,skip-copy-src,skip-gen-rosdep-list,skip-colcon-build,skip-gen-debian,skip-build-deb
 PARSED=$(getopt --options "$OPTIONS" --longoptions "$LONGOPTIONS" --name "$0" -- "$@")
 
 # Check if getopt failed
@@ -20,6 +20,7 @@ eval set -- "$PARSED"
 uid=
 gid=
 output=
+log_dir=
 skip_opts=""
 
 print_usage() {
@@ -42,6 +43,10 @@ while true; do
 	    ;;
 	--output)
 	    output="$2"
+	    shift 2
+	    ;;
+	--log-dir)
+	    log_dir="$2"
 	    shift 2
 	    ;;
 	--skip-rosdep-install)
@@ -98,4 +103,4 @@ chown -R "$name:$name" /workspace
 # Run the build script
 # Both workspace and output are always required now
 sudo -u ubuntu \
-     bash -c "rosdep update && '$script_dir/main.sh' --workspace=/workspace --output='$output' $skip_opts"
+     bash -c "rosdep update && '$script_dir/main.sh' --workspace=/workspace --output='$output' --log-dir='$log_dir' $skip_opts"

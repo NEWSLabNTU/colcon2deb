@@ -233,10 +233,10 @@ def main() -> int:
     ros_distro = get_env_str("ROS_DISTRO", "humble")
     ros_install_prefix = get_env_str("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
 
-    # Status files - use environment variables if set, else default with prefixes
-    successful_pkgs_file = Path(os.environ.get("successful_pkgs_file", str(log_dir / "08-successful_pkgs.txt")))
-    failed_pkgs_file = Path(os.environ.get("failed_pkgs_file", str(log_dir / "08-failed_pkgs.txt")))
-    skipped_pkgs_file = Path(os.environ.get("skipped_pkgs_file", str(log_dir / "08-skipped_pkgs.txt")))
+    # Status files - use environment variables if set, else defaults (no number prefix for outcome files)
+    successful_pkgs_file = Path(os.environ.get("successful_pkgs_file", str(log_dir / "successful_pkgs.txt")))
+    failed_pkgs_file = Path(os.environ.get("failed_pkgs_file", str(log_dir / "failed_pkgs.txt")))
+    skipped_pkgs_file = Path(os.environ.get("skipped_pkgs_file", str(log_dir / "skipped_pkgs.txt")))
 
     os.chdir(colcon_work_dir)
     print("info: build Debian packages")
