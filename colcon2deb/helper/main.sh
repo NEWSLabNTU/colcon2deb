@@ -3,7 +3,7 @@ set -e
 
 # Parse options using getopt
 OPTIONS=h
-LONGOPTIONS=help,skip-rosdep-install,skip-copy-src,skip-gen-rosdep-list,skip-colcon-build,workspace:,output:
+LONGOPTIONS=help,skip-rosdep-install,skip-copy-src,skip-gen-rosdep-list,skip-colcon-build,skip-gen-debian,skip-build-deb,workspace:,output:
 PARSED=$(getopt --options "$OPTIONS" --longoptions "$LONGOPTIONS" --name "$0" -- "$@")
 
 # Check if getopt failed
@@ -19,16 +19,20 @@ export rosdep_install=y
 export gen_rosdep_list=y
 export copy_src=y
 export colcon_build=y
+export gen_debian=y
+export build_deb=y
 export workspace_dir=
 export output_dir=
 
 print_usage() {
     echo "Usage: $0 [OPTION]... --workspace=WORKSPACE_DIR --output=OUTPUT_DIR"
     echo "  -h,--help                   show this help message"
-    echo "  --skip-rosdep-install       do not run `rosdep install`"
+    echo "  --skip-rosdep-install       do not run rosdep install"
     echo "  --skip-copy-src             do not copy source files to the build cache"
     echo "  --skip-gen-rosdep-list      do not modify the system rosdep list"
-    echo "  --skip-colcon-build         do not run `colcon build`"
+    echo "  --skip-colcon-build         do not run colcon build"
+    echo "  --skip-gen-debian           do not generate Debian metadata (Phase 7)"
+    echo "  --skip-build-deb            do not build .deb packages (Phase 8)"
     echo "  --workspace=WORKSPACE_DIR   source workspace directory"
     echo "  --output=OUTPUT_DIR         output directory for build artifacts and .deb files"
 }
@@ -53,6 +57,14 @@ while true; do
 	    ;;
 	--skip-colcon-build)
 	    colcon_build=n
+	    shift 1
+	    ;;
+	--skip-gen-debian)
+	    gen_debian=n
+	    shift 1
+	    ;;
+	--skip-build-deb)
+	    build_deb=n
 	    shift 1
 	    ;;
 	--workspace)
@@ -171,12 +183,20 @@ print_phase "Phase 6: Creating package list"
 ./create-package-list.sh
 
 # Copy or generate Debian control/rules files
-print_phase "Phase 7: Generating Debian metadata"
-python3 "$script_dir/generate_debian_dir.py"
+if [[ "$gen_debian" == "y" ]]; then
+    print_phase "Phase 7: Generating Debian metadata"
+    python3 "$script_dir/generate_debian_dir.py"
+else
+    print_phase "Phase 7: Skipping Debian metadata generation (--skip-gen-debian)"
+fi
 
 # Build Debian packages
-print_phase "Phase 8: Building Debian packages"
-python3 "$script_dir/build_deb.py"
+if [[ "$build_deb" == "y" ]]; then
+    print_phase "Phase 8: Building Debian packages"
+    python3 "$script_dir/build_deb.py"
+else
+    print_phase "Phase 8: Skipping Debian package builds (--skip-build-deb)"
+fi
 
 # Since we're working directly in the output directory, packages are already in the right place
 echo "Packages are in: $release_dir"

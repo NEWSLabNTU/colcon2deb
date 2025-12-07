@@ -201,6 +201,38 @@ def main():
         help="Path to configuration YAML file",
     )
 
+    # Skip options for incremental builds
+    parser.add_argument(
+        "--skip-rosdep-install",
+        action="store_true",
+        help="Skip rosdep install step (Phase 3)",
+    )
+    parser.add_argument(
+        "--skip-copy-src",
+        action="store_true",
+        help="Skip copying source files (Phase 2)",
+    )
+    parser.add_argument(
+        "--skip-gen-rosdep-list",
+        action="store_true",
+        help="Skip generating rosdep list (Phase 5)",
+    )
+    parser.add_argument(
+        "--skip-colcon-build",
+        action="store_true",
+        help="Skip colcon build step (Phase 4)",
+    )
+    parser.add_argument(
+        "--skip-gen-debian",
+        action="store_true",
+        help="Skip generating Debian metadata (Phase 7)",
+    )
+    parser.add_argument(
+        "--skip-build-deb",
+        action="store_true",
+        help="Skip building .deb packages (Phase 8)",
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -403,6 +435,20 @@ def main():
         f"--gid={gid}",
         f"--output=/output",
     ]
+
+    # Add skip options if specified
+    if args.skip_rosdep_install:
+        docker_cmd.append("--skip-rosdep-install")
+    if args.skip_copy_src:
+        docker_cmd.append("--skip-copy-src")
+    if args.skip_gen_rosdep_list:
+        docker_cmd.append("--skip-gen-rosdep-list")
+    if args.skip_colcon_build:
+        docker_cmd.append("--skip-colcon-build")
+    if args.skip_gen_debian:
+        docker_cmd.append("--skip-gen-debian")
+    if args.skip_build_deb:
+        docker_cmd.append("--skip-build-deb")
 
     # Add nvidia runtime if available and requested in config
     use_nvidia = build_config.get("use_nvidia_runtime", False)
