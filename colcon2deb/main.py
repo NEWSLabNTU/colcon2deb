@@ -159,7 +159,9 @@ def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None,
     if log_dir:
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / "docker_build.log"
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        log_file = log_dir / f"{timestamp}_docker_build.log"
 
     run_command(cmd, log_file=log_file, show_output=True)
     return image_name

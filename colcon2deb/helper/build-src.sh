@@ -4,14 +4,18 @@ source /opt/ros/humble/setup.bash
 if [ "$colcon_build" = y ]; then
     echo 'info: compiling packages (this may take a while...)'
 
+    # Use datetime format for log file
+    colcon_ts=$(date '+%Y-%m-%d_%H-%M-%S')
+    colcon_log="$log_dir/${colcon_ts}_colcon_build.log"
+
     # Redirect detailed output to log file, show progress only
     colcon build --base-paths src \
         --cmake-args -DCMAKE_BUILD_TYPE=Release \
         --event-handlers console_direct+ \
-        > "$log_dir/04-colcon_build.log" 2>&1 || {
+        > "$colcon_log" 2>&1 || {
         echo 'error: colcon build failed' >&2
-        echo "  See log: $log_dir/04-colcon_build.log" >&2
-        tail -n 20 "$log_dir/04-colcon_build.log" >&2
+        echo "  See log: $colcon_log" >&2
+        tail -n 20 "$colcon_log" >&2
         exit 1
     }
 
