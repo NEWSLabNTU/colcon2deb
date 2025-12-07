@@ -5,7 +5,7 @@ script_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Parse options using getopt
 OPTIONS=h
-LONGOPTIONS=help,uid:,gid:,output:
+LONGOPTIONS=help,uid:,gid:,output:,skip-rosdep-install,skip-copy-src,skip-gen-rosdep-list,skip-colcon-build,skip-gen-debian,skip-build-deb
 PARSED=$(getopt --options "$OPTIONS" --longoptions "$LONGOPTIONS" --name "$0" -- "$@")
 
 # Check if getopt failed
@@ -20,9 +20,10 @@ eval set -- "$PARSED"
 uid=
 gid=
 output=
+skip_opts=""
 
 print_usage() {
-    echo "Usage: $0 --uid=UID --gid=GID [--output=OUTPUT_DIR]"
+    echo "Usage: $0 --uid=UID --gid=GID [--output=OUTPUT_DIR] [--skip-*]"
 }
 
 while true; do
@@ -42,6 +43,30 @@ while true; do
 	--output)
 	    output="$2"
 	    shift 2
+	    ;;
+	--skip-rosdep-install)
+	    skip_opts="$skip_opts --skip-rosdep-install"
+	    shift 1
+	    ;;
+	--skip-copy-src)
+	    skip_opts="$skip_opts --skip-copy-src"
+	    shift 1
+	    ;;
+	--skip-gen-rosdep-list)
+	    skip_opts="$skip_opts --skip-gen-rosdep-list"
+	    shift 1
+	    ;;
+	--skip-colcon-build)
+	    skip_opts="$skip_opts --skip-colcon-build"
+	    shift 1
+	    ;;
+	--skip-gen-debian)
+	    skip_opts="$skip_opts --skip-gen-debian"
+	    shift 1
+	    ;;
+	--skip-build-deb)
+	    skip_opts="$skip_opts --skip-build-deb"
+	    shift 1
 	    ;;
 	--)
 	    shift
@@ -73,4 +98,4 @@ chown -R "$name:$name" /workspace
 # Run the build script
 # Both workspace and output are always required now
 sudo -u ubuntu \
-     bash -c "rosdep update && '$script_dir/main.sh' --workspace=/workspace --output='$output'"
+     bash -c "rosdep update && '$script_dir/main.sh' --workspace=/workspace --output='$output' $skip_opts"
