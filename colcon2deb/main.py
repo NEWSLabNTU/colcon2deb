@@ -3,16 +3,120 @@
 
 import argparse
 import os
+import signal
 import subprocess
 import sys
 import yaml
 import tempfile
+import threading
+import time
 import urllib.request
 import urllib.error
 import hashlib
 import shutil
 import atexit
 from pathlib import Path
+
+
+# Global state for signal handling
+_container_id = None
+_interrupt_count = 0
+_interrupt_lock = threading.Lock()
+
+
+def stop_container(container_id, force=False):
+    """Stop a Docker container."""
+    if not container_id:
+        return
+
+    try:
+        if force:
+            print(f"\nForce killing container {container_id[:12]}...")
+            subprocess.run(["docker", "kill", container_id], capture_output=True, timeout=10)
+        else:
+            print(f"\nStopping container {container_id[:12]} (press Ctrl+C again to force)...")
+            subprocess.run(["docker", "stop", "-t", "10", container_id], capture_output=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        # If stop times out, try kill
+        try:
+            subprocess.run(["docker", "kill", container_id], capture_output=True, timeout=5)
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"Warning: Failed to stop container: {e}", file=sys.stderr)
+
+
+def signal_handler(signum, frame):
+    """Handle interrupt signals with escalating force."""
+    global _interrupt_count, _container_id
+
+    with _interrupt_lock:
+        _interrupt_count += 1
+        count = _interrupt_count
+
+    if count == 1:
+        print("\n\nReceived interrupt signal. Stopping container gracefully...")
+        print("Press Ctrl+C again to force stop, or 3 times to force kill immediately.")
+        # Try to find and stop the container
+        if _container_id:
+            stop_container(_container_id, force=False)
+    elif count == 2:
+        print("\n\nReceived second interrupt. Force stopping...")
+        if _container_id:
+            stop_container(_container_id, force=True)
+    else:
+        print("\n\nReceived third interrupt. Forcing immediate exit...")
+        if _container_id:
+            stop_container(_container_id, force=True)
+        sys.exit(130)  # 128 + SIGINT
+
+
+def run_container_with_signal_handling(docker_cmd, image_name):
+    """Run a Docker container with proper signal handling."""
+    global _container_id, _interrupt_count
+
+    # Reset interrupt count
+    _interrupt_count = 0
+
+    # Set up signal handler
+    original_handler = signal.signal(signal.SIGINT, signal_handler)
+
+    try:
+        # Start the container
+        process = subprocess.Popen(docker_cmd)
+
+        # Try to get container ID (with retries)
+        for _ in range(10):
+            time.sleep(0.5)
+            # Try to find container by image name
+            try:
+                result = subprocess.run(
+                    ["docker", "ps", "-q", "--filter", f"ancestor={image_name}", "--filter", "status=running"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    _container_id = result.stdout.strip().split("\n")[0]
+                    break
+            except Exception:
+                pass
+
+            # Check if process already finished
+            if process.poll() is not None:
+                break
+
+        # Wait for the process to complete
+        return_code = process.wait()
+        return return_code
+
+    except Exception as e:
+        print(f"Error running container: {e}", file=sys.stderr)
+        return 1
+    finally:
+        # Restore original signal handler
+        signal.signal(signal.SIGINT, original_handler)
+        _container_id = None
 
 
 def run_command(cmd, check=True, log_file=None, show_output=False):
@@ -481,14 +585,12 @@ def main():
     print(f"\n  Build artifacts will be in: {output_dir}/")
     print(f"  Final .deb packages will be in: {output_dir}/dist/")
 
-    try:
-        subprocess.run(docker_cmd)
-    except subprocess.CalledProcessError as e:
-        print(f"Error running container: {e}", file=sys.stderr)
-        sys.exit(1)
-    except KeyboardInterrupt:
-        print("\nInterrupted by user")
-        sys.exit(0)
+    # Run the container with signal handling
+    return_code = run_container_with_signal_handling(docker_cmd, image_name)
+
+    if return_code != 0:
+        print(f"\nContainer exited with code {return_code}", file=sys.stderr)
+        sys.exit(return_code)
 
 
 if __name__ == "__main__":
