@@ -17,6 +17,13 @@ truncate -s 0 "$skipped_pkgs_file" 2>/dev/null || true
 # Prevent colcon from erroneously scan this folder
 touch "$top_work_dir/COLCON_IGNORE"
 
+# Helper function to get package work directory
+make_pkg_work_dir() {
+    local pkg_name="$1"
+    echo "$pkg_build_dir/$pkg_name"
+}
+export -f make_pkg_work_dir
+
 clean_work_dir() {
     set -e
     work_dir=$1
