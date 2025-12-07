@@ -103,4 +103,4 @@ chown -R "$name:$name" /workspace
 # Run the build script
 # Both workspace and output are always required now
 sudo -u ubuntu \
-     bash -c "rosdep update && '$script_dir/main.sh' --workspace=/workspace --output='$output' --log-dir='$log_dir' $skip_opts"
+     bash -c "rosdep update && python3 '$script_dir/main.py' --workspace=/workspace --output='$output' --log-dir='$log_dir' $skip_opts"
