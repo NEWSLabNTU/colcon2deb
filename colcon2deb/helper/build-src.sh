@@ -8,10 +8,10 @@ if [ "$colcon_build" = y ]; then
     colcon build --base-paths src \
         --cmake-args -DCMAKE_BUILD_TYPE=Release \
         --event-handlers console_direct+ \
-        > "$log_dir/colcon_build.log" 2>&1 || {
+        > "$log_dir/04-colcon_build.log" 2>&1 || {
         echo 'error: colcon build failed' >&2
-        echo "  See log: $log_dir/colcon_build.log" >&2
-        tail -n 20 "$log_dir/colcon_build.log" >&2
+        echo "  See log: $log_dir/04-colcon_build.log" >&2
+        tail -n 20 "$log_dir/04-colcon_build.log" >&2
         exit 1
     }
 

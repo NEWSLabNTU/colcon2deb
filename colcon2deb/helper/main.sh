@@ -133,11 +133,21 @@ export pkg_build_dir="$top_work_dir/build"
 export check_dir="$release_dir"
 export final_output_dir="$release_dir"
 
-export log_dir="$top_work_dir/log"
-export deb_pkgs_file="$log_dir/deb_pkgs.txt"
-export successful_pkgs_file="$log_dir/successful_pkgs.txt"
-export failed_pkgs_file="$log_dir/failed_pkgs.txt"
-export skipped_pkgs_file="$log_dir/skipped_pkgs.txt"
+# Create timestamped log directory
+export log_timestamp=$(date '+%Y-%m-%d_%H-%M-%S')
+export log_base_dir="$top_work_dir/log"
+export log_dir="$log_base_dir/$log_timestamp"
+mkdir -p "$log_dir"
+
+# Create/update 'latest' symlink
+rm -f "$log_base_dir/latest"
+ln -s "$log_timestamp" "$log_base_dir/latest"
+
+# Log file paths with numbered prefixes
+export deb_pkgs_file="$log_dir/06-deb_pkgs.txt"
+export successful_pkgs_file="$log_dir/08-successful_pkgs.txt"
+export failed_pkgs_file="$log_dir/08-failed_pkgs.txt"
+export skipped_pkgs_file="$log_dir/08-skipped_pkgs.txt"
 
 # export generate_debian_script="$script_dir/generate-debian.sh"
 export rosdep_gen_script="$script_dir/generate-rosdep-commands.sh"

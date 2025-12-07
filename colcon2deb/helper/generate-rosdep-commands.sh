@@ -29,7 +29,7 @@ simulate_output=$(rosdep install --simulate --reinstall \
     -r 2>&1) || true
 
 # Save raw output for debugging
-echo "$simulate_output" > "$log_dir/rosdep_simulate.log" 2>/dev/null || true
+echo "$simulate_output" > "$log_dir/03-rosdep_simulate.log" 2>/dev/null || true
 
 # Parse the simulate output to extract package names
 # Format is:
