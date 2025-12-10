@@ -1,0 +1,33 @@
+# Test workspace build automation
+
+# Project root (two levels up)
+project_root := `cd ../.. && pwd`
+
+# Show available recipes
+default:
+    @just --list
+
+# Build Debian packages
+build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Verify source exists
+    if [ ! -d source/src ]; then
+        echo "Error: source/src not found"
+        exit 1
+    fi
+
+    pkg_count=$(find source/src -name "package.xml" | wc -l)
+    echo "Building ${pkg_count} packages..."
+
+    # Use project venv colcon2deb
+    {{project_root}}/.venv/bin/colcon2deb --workspace source --config config.yaml
+
+# Clean build artifacts
+clean:
+    rm -rf build/
+
+# List packages in workspace
+list:
+    @find source/src -name "package.xml" -exec dirname {} \; | xargs -n1 basename
