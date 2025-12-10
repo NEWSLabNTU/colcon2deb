@@ -17,6 +17,8 @@ This project builds Debian packages from ROS 2 colcon workspaces in isolated Doc
 
 **Architecture**: All build logic is implemented in Python modules. The `colcon2deb` package is mounted into Docker containers and installed on-the-fly.
 
+**Vendored bloom**: The project includes a vendored `bloom_gen` package (fork of ros/bloom) in `colcon2deb/bloom/` as a git submodule. This provides custom install prefix support and ament_python environment hooks.
+
 **Autoware Examples**: For Autoware-specific build configurations and examples, see [autoware-localrepo](https://github.com/NEWSLabNTU/autoware-localrepo).
 
 ## Key Commands
@@ -42,155 +44,173 @@ colcon2deb --workspace /path/to/ros_ws --config config.yaml
 colcon2deb --help
 ```
 
-### Testing
+### Testing and Linting
 ```bash
-# Run tests with uv
-uv run pytest tests/
+# Run tests
+uv run pytest tests/ -v
+
+# Run with coverage
 uv run pytest tests/ --cov
 
-# Specific test files
-uv run pytest tests/unit/test_colcon2deb.py
+# Lint check
+uv run ruff check colcon2deb/
+
+# Format check
+uv run ruff format --check colcon2deb/
+
+# Auto-fix lint issues
+uv run ruff check --fix colcon2deb/
+uv run ruff format colcon2deb/
+```
+
+### Version Management
+```bash
+# Bump version (updates pyproject.toml)
+just bump-version 0.3.0
+```
+
+## CI/CD
+
+### GitHub Workflows
+
+**CI** (`.github/workflows/ci.yml`) - Triggered on push/PR to main:
+- `lint`: Runs `ruff check` and `ruff format --check`
+- `build`: Builds wheel, verifies installation
+- `test`: Runs pytest on Python 3.10, 3.11, 3.12
+
+**Release** (`.github/workflows/release.yml`) - Triggered on `v*` tags:
+- `build`: Builds wheel and sdist
+- `pypi-publish`: Publishes to PyPI via trusted publishing (OIDC)
+- `github-release`: Creates GitHub release with artifacts
+
+### Creating a Release
+```bash
+# Bump version
+just bump-version X.Y.Z
+
+# Commit and tag
+git add pyproject.toml
+git commit -m "Bump version to X.Y.Z"
+git push origin main
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
 ```
 
 ## Architecture
 
 ### Directory Structure
 - `colcon2deb/` - Main Python package
-  - `cli.py` - CLI entry point
-  - `main.py` - Build orchestrator
-  - `config.py` - BuildConfig dataclass
-  - `utils.py` - Logging and command utilities
-  - `prepare.py` - Directory setup and workspace copying
-  - `dependencies.py` - Dependency installation (rosdep integration)
-  - `compiler.py` - Workspace compilation
-  - `debian.py` - Debian metadata generation
-  - `packager.py` - Parallel package building
+  - `main.py` - Host-side CLI and Docker orchestration
+  - `helper/` - Scripts that run inside Docker container
+    - `entry.sh` - Container entry point
+    - `main.py` - Build orchestrator inside container
+    - `generate_debian_dir.py` - Debian metadata generation
+    - `build_deb.py` - Package building
+  - `bloom/` - Vendored bloom_gen submodule (git submodule)
+    - `bloom_gen/` - Modified bloom package with install prefix support
+    - `bloom_gen/generators/debian/templates/` - Debian packaging templates
 - `templates/` - Templates for package generation
-- `makedeb/` - Debian package build configuration
-  - `PKGBUILD` - Package build script for makedeb
-  - `colcon2deb` - Wrapper script for /usr/bin
 - `tests/` - Test suite
-- `doc/` - Documentation
-  - `roadmap.md` - Development roadmap
-  - `script-execution-model.md` - How scripts execute
-  - `troubleshooting-guide.md` - Common issues and solutions
-  - `parallel-optimization.md` - Performance tuning
+- `examples/` - Example configurations
+  - `simple-example/` - Simple test workspace
+- `.github/workflows/` - CI/CD workflows
 - `pyproject.toml` - Python project configuration (uv compatible)
+- `justfile` - Build automation
 
 ### Build Process Flow
-1. `colcon2deb.cli` reads config and launches Docker container
-2. Container mounts the `colcon2deb` source and installs it
-3. Container creates ubuntu user for specified uid/gid
-4. Container runs `sudo rosdep init` then `rosdep update` as ubuntu user
-5. `colcon2deb.main` orchestrates the build:
-   - `prepare.setup_directories()` - Initialize working directories
-   - `prepare.copy_workspace()` - Copy source files
-   - `dependencies.install_dependencies()` - Install dependencies via rosdep
-   - `compiler.build_workspace()` - Compile with colcon
-   - `debian.create_rosdep_list()` - Generate custom rosdep mappings
-   - `debian.get_package_list()` - List all packages
-   - `debian.generate_debian_metadata()` - Create Debian metadata with bloom (parallel)
-   - `packager.build_packages_parallel()` - Build .deb packages (parallel)
+1. Host `colcon2deb/main.py` reads config and launches Docker container
+2. Container mounts workspace, output dir, helper scripts, and bloom_gen
+3. Container entry point (`helper/entry.sh`) sets up user and environment
+4. `helper/main.py` orchestrates the build phases:
+   - Phase 1-3: Setup directories, copy sources
+   - Phase 4: Build workspace with colcon
+   - Phase 5: Install rosdep dependencies
+   - Phase 6: Generate rosdep mappings
+   - Phase 7: Generate debian directories (using bloom_gen)
+   - Phase 8: Build .deb packages
 
 ### Key Design Principles
 - **No ROS on host** - Only Python and Docker required
 - **Read-only source mounts** - Prevents accidental modifications
 - **Isolated builds** - Everything runs in Docker containers
-- **Clean interfaces** - Communication via volumes, Python dataclasses
-- **Type safety** - BuildConfig dataclass with type hints
-- **Parallel execution** - ThreadPoolExecutor (I/O) and ProcessPoolExecutor (CPU)
-
-## Testing
-
-**IMPORTANT: This project uses uv for dependency management.**
-
-```bash
-# Run all tests
-uv run pytest tests/
-
-# Run with coverage
-uv run pytest tests/ --cov
-
-# Run specific test file
-uv run pytest tests/unit/test_colcon2deb.py
-
-# Run tests in verbose mode
-uv run pytest tests/ -v
-```
-
-## Important Files
-
-- `colcon2deb/cli.py` - CLI entry point
-- `colcon2deb/main.py` - Build orchestrator
-- `colcon2deb/dependencies.py` - Rosdep integration for dependency management
-- `colcon2deb/config.py` - BuildConfig dataclass
-- `pyproject.toml` - Project configuration and dependencies
-- `justfile` - Main build automation (build, install, clean)
-
-## Common Development Tasks
-
-### Building and Installing colcon2deb
-```bash
-# Build wheel package
-just build
-
-# Install the wheel
-just install
-```
-
-### Debugging Build Issues
-1. Check logs in `build/log/` directory:
-   - `container.log` - Full container output
-   - `rosdep_detection.log` - Rosdep key detection
-   - `rosdep_full_output.log` - Full rosdep output
-   - `colcon_build.log` - Colcon build output
-2. Run with verbose output
-3. Test rosdep commands manually in the container
-
-### Modifying Build Process
-- CLI changes: Edit `colcon2deb/cli.py`
-- Build orchestration: Edit `colcon2deb/main.py`
-- Dependency management: Edit `colcon2deb/dependencies.py`
-- Package configuration: Edit `pyproject.toml`
-
-## Known Issues and Fixes
-
-### Rosdep Integration (Fixed)
-- **Issue**: rosdep wasn't detecting dependencies correctly
-- **Fix**: Modified `colcon2deb/dependencies.py` to:
-  1. Run `sudo rosdep init` before `rosdep update`
-  2. Add `--rosdistro` flag explicitly to all rosdep commands
-  3. Detect unresolvable packages and skip them with `--skip-keys`
-  4. Fix grep pattern to match `sudo -H apt-get install -y` format
-  5. Save full rosdep output to `rosdep_full_output.log` for debugging
-- **Result**: Successfully detects 130+ packages for installation
-
-### Package Structure
-- Package renamed from `autoware_debian_packager` to `colcon2deb`
-- CLI entry point: `colcon2deb.cli:main`
-- Development mode: Uses editable install (`pip3 install -e .`)
-- Wheel mode: Uses PYTHONPATH to access mounted package
-- Mount path: `/opt/colcon2deb_pkg/colcon2deb`
+- **Custom install prefix** - Configurable via `install_prefix` in config.yaml
+- **Vendored bloom** - Modified bloom_gen with install prefix and ament_python fixes
 
 ## Configuration File Format
 
 ```yaml
-# Basic configuration
-workspace_dir: /path/to/ros_ws
-output_dir: /path/to/output
+# Basic configuration with Dockerfile
+workspace_dir: ./source
+output_dir: ./build
 dockerfile: Dockerfile
 
-# Or with remote Dockerfile
-workspace_dir: /path/to/ros_ws
-output_dir: /path/to/output
+# With remote Dockerfile
+workspace_dir: ./source
+output_dir: ./build
 dockerfile: https://example.com/Dockerfile
 
-# Or with prebuilt image
-workspace_dir: /path/to/ros_ws
-output_dir: /path/to/output
+# With prebuilt image
+workspace_dir: ./source
+output_dir: ./build
 image: my-builder:latest
+
+# With custom install prefix (default: /opt/ros/{ros_distro})
+workspace_dir: ./source
+output_dir: ./build
+image: my-builder:latest
+install_prefix: /opt/autoware/custom
 ```
+
+## Important Files
+
+- `colcon2deb/main.py` - Host-side CLI and Docker orchestration
+- `colcon2deb/helper/main.py` - Container-side build orchestrator
+- `colcon2deb/helper/generate_debian_dir.py` - Uses bloom_gen to generate debian/
+- `colcon2deb/bloom/bloom_gen/api.py` - Library API for debian generation
+- `colcon2deb/bloom/bloom_gen/generators/debian/templates/` - Package templates
+- `pyproject.toml` - Project configuration, dependencies, ruff config
+- `justfile` - Build automation (build, install, test, bump-version)
+
+## Vendored bloom_gen
+
+The `colcon2deb/bloom/` directory is a git submodule containing a modified bloom package:
+
+- Renamed from `bloom` to `bloom_gen` to avoid import conflicts
+- Added `--install-prefix` support for custom installation paths
+- Fixed `ament_python/rules.em` template to generate environment hooks:
+  - Creates `hook/pythonpath.{sh,dsv}` for PYTHONPATH setup
+  - Creates `hook/ament_prefix_path.{sh,dsv}` for AMENT_PREFIX_PATH
+  - Creates `local_setup.{bash,sh,zsh}` for environment sourcing
+
+### Updating bloom submodule
+```bash
+cd colcon2deb/bloom
+git pull origin colcon2deb
+cd ../..
+git add colcon2deb/bloom
+git commit -m "Update bloom submodule"
+```
+
+## Debugging
+
+### Build Logs
+Logs are in `build/log/<timestamp>/`:
+- `summary.txt` - Build summary
+- `<package>/gen_deb.{out,err}` - Debian generation logs
+- `<package>/build.{out,err}` - Package build logs
+
+### Common Issues
+
+1. **debian-overrides caching**: If changing `install_prefix`, delete cached debian directories:
+   ```bash
+   rm -rf debian-overrides/*/debian/
+   ```
+
+2. **bloom_gen import errors**: Ensure PYTHONPATH includes `/bloom` in container
+
+3. **Permission errors**: Helper scripts need read permission (`chmod a+r`)
 
 ## Related Projects
 
 - [autoware-localrepo](https://github.com/NEWSLabNTU/autoware-localrepo) - Autoware build configurations and APT repository builder
+- [bloom](https://github.com/jerry73204/bloom) - Forked bloom with colcon2deb branch
