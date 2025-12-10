@@ -2,36 +2,16 @@
 
 [Introduction](./introduction.md)
 
-# User Guide
+# For Users
 
-- [Getting Started](./getting-started.md)
+- [Installation](./user/installation.md)
+- [Usage](./user/usage.md)
 
-# Architecture
+# Advanced Usage
 
-- [Architecture Overview](./architecture/overview.md)
-- [Script Execution Model](./architecture/script-execution.md)
+- [Custom Dockerfiles](./advanced/dockerfile.md)
+- [Debian Overrides](./advanced/debian-overrides.md)
 
-# Docker
+# For Developers
 
-- [Docker Configuration](./docker/configuration.md)
-
-# Build Process
-
-- [Build Process Overview](./build-process/overview.md)
-
-# Troubleshooting
-
-- [Common Issues](./troubleshooting/common-issues.md)
-
-# Development
-
-- [Development Setup](./development/setup.md)
-
-# Reference
-
-- [CLI Reference](./reference/cli.md)
-- [API Reference](./reference/api.md)
-
-# Project
-
-- [Roadmap](./project/roadmap.md)
+- [Architecture](./developer/architecture.md)
