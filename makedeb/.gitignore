@@ -1,6 +1,0 @@
-# makedeb artifacts
-/src/
-/pkg/
-/colcon2deb-*.tar.gz
-/colcon2deb_*.deb
-/colcon2deb-*.whl
