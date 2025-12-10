@@ -88,10 +88,10 @@ def write_summary_file(
 
         # Status
         if last_failing_phase:
-            f.write(f"Status: FAILED\n")
+            f.write("Status: FAILED\n")
             f.write(f"Last failing step: {last_failing_phase}\n")
         else:
-            f.write(f"Status: SUCCESS\n")
+            f.write("Status: SUCCESS\n")
         f.write("\n")
 
         # Package statistics
@@ -242,9 +242,7 @@ def print_summary(
 
 def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Build Debian packages for ROS packages"
-    )
+    parser = argparse.ArgumentParser(description="Build Debian packages for ROS packages")
     parser.add_argument(
         "--workspace",
         required=True,
@@ -337,30 +335,32 @@ def main() -> int:
 
     # Prepare environment for shell scripts
     env = os.environ.copy()
-    env.update({
-        "script_dir": str(script_dir),
-        "workspace_dir": str(workspace_dir),
-        "output_dir": str(output_dir),
-        "top_work_dir": str(top_work_dir),
-        "colcon_work_dir": str(colcon_work_dir),
-        "config_dir": str(config_dir),
-        "release_dir": str(release_dir),
-        "pkg_build_dir": str(pkg_build_dir),
-        "check_dir": str(check_dir),
-        "log_dir": str(log_dir),
-        "deb_pkgs_file": str(deb_pkgs_file),
-        "successful_pkgs_file": str(successful_pkgs_file),
-        "failed_pkgs_file": str(failed_pkgs_file),
-        "skipped_pkgs_file": str(skipped_pkgs_file),
-        "ROS_DISTRO": ros_distro,
-        "ROS_INSTALL_PREFIX": ros_install_prefix,
-        "rosdep_install": "n" if args.skip_rosdep_install else "y",
-        "copy_src": "n" if args.skip_copy_src else "y",
-        "gen_rosdep_list": "n" if args.skip_gen_rosdep_list else "y",
-        "colcon_build": "n" if args.skip_colcon_build else "y",
-        "gen_debian": "n" if args.skip_gen_debian else "y",
-        "build_deb": "n" if args.skip_build_deb else "y",
-    })
+    env.update(
+        {
+            "script_dir": str(script_dir),
+            "workspace_dir": str(workspace_dir),
+            "output_dir": str(output_dir),
+            "top_work_dir": str(top_work_dir),
+            "colcon_work_dir": str(colcon_work_dir),
+            "config_dir": str(config_dir),
+            "release_dir": str(release_dir),
+            "pkg_build_dir": str(pkg_build_dir),
+            "check_dir": str(check_dir),
+            "log_dir": str(log_dir),
+            "deb_pkgs_file": str(deb_pkgs_file),
+            "successful_pkgs_file": str(successful_pkgs_file),
+            "failed_pkgs_file": str(failed_pkgs_file),
+            "skipped_pkgs_file": str(skipped_pkgs_file),
+            "ROS_DISTRO": ros_distro,
+            "ROS_INSTALL_PREFIX": ros_install_prefix,
+            "rosdep_install": "n" if args.skip_rosdep_install else "y",
+            "copy_src": "n" if args.skip_copy_src else "y",
+            "gen_rosdep_list": "n" if args.skip_gen_rosdep_list else "y",
+            "colcon_build": "n" if args.skip_colcon_build else "y",
+            "gen_debian": "n" if args.skip_gen_debian else "y",
+            "build_deb": "n" if args.skip_build_deb else "y",
+        }
+    )
 
     # Track which phase failed (for summary.txt)
     last_failing_phase: str | None = None

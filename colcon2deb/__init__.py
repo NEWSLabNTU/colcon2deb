@@ -1,6 +1,6 @@
 """colcon2deb - Build Debian packages from colcon workspaces in Docker containers."""
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("colcon2deb")

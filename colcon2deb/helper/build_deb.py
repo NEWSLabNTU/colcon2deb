@@ -13,7 +13,6 @@ Uses ThreadPoolExecutor for parallel execution.
 
 from __future__ import annotations
 
-import glob
 import os
 import shutil
 import subprocess
@@ -234,7 +233,9 @@ def main() -> int:
     ros_install_prefix = get_env_str("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
 
     # Status files - use environment variables if set, else defaults (no number prefix for outcome files)
-    successful_pkgs_file = Path(os.environ.get("successful_pkgs_file", str(log_dir / "successful_pkgs.txt")))
+    successful_pkgs_file = Path(
+        os.environ.get("successful_pkgs_file", str(log_dir / "successful_pkgs.txt"))
+    )
     failed_pkgs_file = Path(os.environ.get("failed_pkgs_file", str(log_dir / "failed_pkgs.txt")))
     skipped_pkgs_file = Path(os.environ.get("skipped_pkgs_file", str(log_dir / "skipped_pkgs.txt")))
 

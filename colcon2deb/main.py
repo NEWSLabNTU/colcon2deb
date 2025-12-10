@@ -2,21 +2,21 @@
 """Docker run script replacement for make run with enhanced functionality."""
 
 import argparse
+import atexit
+import hashlib
 import os
+import shutil
 import signal
 import subprocess
 import sys
-import yaml
 import tempfile
 import threading
 import time
-import urllib.request
 import urllib.error
-import hashlib
-import shutil
-import atexit
+import urllib.request
 from pathlib import Path
 
+import yaml
 
 # Global state for signal handling
 _container_id = None
@@ -35,7 +35,9 @@ def stop_container(container_id, force=False):
             subprocess.run(["docker", "kill", container_id], capture_output=True, timeout=10)
         else:
             print(f"\nStopping container {container_id[:12]} (press Ctrl+C again to force)...")
-            subprocess.run(["docker", "stop", "-t", "10", container_id], capture_output=True, timeout=20)
+            subprocess.run(
+                ["docker", "stop", "-t", "10", container_id], capture_output=True, timeout=20
+            )
     except subprocess.TimeoutExpired:
         # If stop times out, try kill
         try:
@@ -91,7 +93,15 @@ def run_container_with_signal_handling(docker_cmd, image_name):
             # Try to find container by image name
             try:
                 result = subprocess.run(
-                    ["docker", "ps", "-q", "--filter", f"ancestor={image_name}", "--filter", "status=running"],
+                    [
+                        "docker",
+                        "ps",
+                        "-q",
+                        "--filter",
+                        f"ancestor={image_name}",
+                        "--filter",
+                        "status=running",
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=5,
@@ -143,7 +153,7 @@ def run_command(cmd, check=True, log_file=None, show_output=False):
             print(f"Running: {' '.join(cmd)}")
             print(f"  Output logged to: {log_file}")
 
-        with open(log_file, 'w') as log:
+        with open(log_file, "w") as log:
             log.write(f"Command: {' '.join(cmd)}\n")
             log.write("=" * 80 + "\n\n")
             result = subprocess.run(cmd, check=check, capture_output=True, text=True)
@@ -159,14 +169,14 @@ def run_command(cmd, check=True, log_file=None, show_output=False):
             print(f"✗ Command failed with exit code {result.returncode}", file=sys.stderr)
             print(f"  See log: {log_file}", file=sys.stderr)
         elif show_output:
-            print(f"  ✓ Complete")
+            print("  ✓ Complete")
 
         return result
 
 
 def download_dockerfile(url, cache_dir=None):
     """Download Dockerfile from HTTP/HTTPS URL."""
-    print(f"\nDownloading Dockerfile from URL...")
+    print("\nDownloading Dockerfile from URL...")
     print(f"  URL: {url}")
 
     # Create cache directory if specified
@@ -180,12 +190,12 @@ def download_dockerfile(url, cache_dir=None):
 
         # Check if cached file exists
         if cached_file.exists():
-            print(f"  ✓ Using cached Dockerfile")
+            print("  ✓ Using cached Dockerfile")
             print(f"  Cache location: {cached_file}")
             return cached_file
 
     try:
-        print(f"  Fetching from remote...")
+        print("  Fetching from remote...")
         # Download the file
         request = urllib.request.Request(url, headers={"User-Agent": "colcon2deb/1.0"})
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -196,7 +206,7 @@ def download_dockerfile(url, cache_dir=None):
         content_str = content.decode("utf-8", errors="ignore")
         if not ("FROM" in content_str or "ARG" in content_str):
             print(
-                f"  ⚠️  Warning: Downloaded content may not be a valid Dockerfile",
+                "  ⚠️  Warning: Downloaded content may not be a valid Dockerfile",
                 file=sys.stderr,
             )
 
@@ -205,7 +215,7 @@ def download_dockerfile(url, cache_dir=None):
         # Save to temporary file or cache
         if cache_dir and cached_file:
             cached_file.write_bytes(content)
-            print(f"  ✓ Cached for future use")
+            print("  ✓ Cached for future use")
             print(f"  Cache location: {cached_file}")
             return cached_file
         else:
@@ -215,7 +225,7 @@ def download_dockerfile(url, cache_dir=None):
             ) as tmp_file:
                 tmp_file.write(content)
                 temp_path = Path(tmp_file.name)
-                print(f"  ✓ Saved to temporary location")
+                print("  ✓ Saved to temporary location")
                 return temp_path
 
     except urllib.error.HTTPError as e:
@@ -224,7 +234,7 @@ def download_dockerfile(url, cache_dir=None):
         sys.exit(1)
     except urllib.error.URLError as e:
         print(f"\n❌ Network Error: {e.reason}", file=sys.stderr)
-        print(f"   Please check your internet connection and the URL", file=sys.stderr)
+        print("   Please check your internet connection and the URL", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ Unexpected error: {e}", file=sys.stderr)
@@ -264,6 +274,7 @@ def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None,
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
         from datetime import datetime
+
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         log_file = log_dir / f"{timestamp}_docker_build.log"
 
@@ -278,7 +289,7 @@ def load_config(config_path):
         print(f"Error: Config file not found at {config_path}", file=sys.stderr)
         sys.exit(1)
 
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         try:
             config = yaml.safe_load(f)
         except yaml.YAMLError as e:
@@ -289,9 +300,7 @@ def load_config(config_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Build Debian packages from colcon workspace"
-    )
+    parser = argparse.ArgumentParser(description="Build Debian packages from colcon workspace")
 
     # Workspace directory
     parser.add_argument(
@@ -390,6 +399,7 @@ def main():
 
     # Create timestamped log directory
     from datetime import datetime
+
     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_dir = log_base_dir / log_timestamp
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -419,7 +429,7 @@ def main():
             # Create a temporary directory with just the Dockerfile
             temp_context = tempfile.mkdtemp(prefix="colcon2deb_context_")
 
-            print(f"\nPreparing build context...")
+            print("\nPreparing build context...")
             print(f"  Temporary context: {temp_context}")
 
             # Register cleanup function to remove temp directory
@@ -465,9 +475,7 @@ def main():
     # Verify workspace directory exists
     workspace_dir = Path(args.workspace).resolve()
     if not workspace_dir.exists():
-        print(
-            f"Error: Workspace directory not found at {workspace_dir}", file=sys.stderr
-        )
+        print(f"Error: Workspace directory not found at {workspace_dir}", file=sys.stderr)
         sys.exit(1)
 
     # Get current user/group IDs
@@ -559,7 +567,7 @@ def main():
         "/helper/entry.sh",
         f"--uid={uid}",
         f"--gid={gid}",
-        f"--output=/output",
+        "--output=/output",
         f"--log-dir=/output/log/{log_timestamp}",
     ]
 
@@ -584,7 +592,7 @@ def main():
         docker_cmd.insert(5, "nvidia")
 
     # Run the container
-    print(f"\nStarting container:")
+    print("\nStarting container:")
     print(f"  Workspace directory: {workspace_dir} -> /workspace")
     print(f"  Packages config directory: {packages_dir} -> /config")
     print(f"  Output directory: {output_dir} -> /output")

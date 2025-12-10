@@ -183,8 +183,7 @@ def copy_or_create_debian_dir(
                 shutil.rmtree(generated_debian_dir)
 
                 out_file.write_text(
-                    out_file.read_text() +
-                    f"Cached to {cache_debian_dir}\n"
+                    out_file.read_text() + f"Cached to {cache_debian_dir}\n"
                     f"Copied to {dst_debian_dir}\n"
                 )
 
@@ -197,6 +196,7 @@ def copy_or_create_debian_dir(
 
     except Exception as e:
         import traceback
+
         err_file.write_text(f"{e}\n{traceback.format_exc()}")
         return DebianDirResult(
             package=pkg_name,
@@ -269,10 +269,16 @@ def main() -> int:
     # Summary
     success_count = sum(1 for r in results if r.status == DebianDirStatus.SUCCESS)
     failed_count = sum(1 for r in results if r.status == DebianDirStatus.FAILED)
-    copy_count = sum(1 for r in results if r.method == "copy" and r.status == DebianDirStatus.SUCCESS)
-    bloom_count = sum(1 for r in results if r.method == "bloom" and r.status == DebianDirStatus.SUCCESS)
+    copy_count = sum(
+        1 for r in results if r.method == "copy" and r.status == DebianDirStatus.SUCCESS
+    )
+    bloom_count = sum(
+        1 for r in results if r.method == "bloom" and r.status == DebianDirStatus.SUCCESS
+    )
 
-    print(f"info: generated {success_count} debian directories ({copy_count} copied, {bloom_count} bloom-generated)")
+    print(
+        f"info: generated {success_count} debian directories ({copy_count} copied, {bloom_count} bloom-generated)"
+    )
 
     if failed_count > 0:
         print(f"warning: {failed_count} packages failed to generate debian directory")
