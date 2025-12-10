@@ -3,7 +3,7 @@
 
 This script generates debian/ directories for each package using either:
 1. Pre-defined debian-overrides (copied from config_dir)
-2. bloom-generate rosdebian (auto-generated)
+2. bloom_gen library (auto-generated)
 
 Uses ThreadPoolExecutor for parallel execution.
 """
@@ -11,6 +11,7 @@ Uses ThreadPoolExecutor for parallel execution.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,6 +19,9 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Literal
+
+# Import bloom_gen library (vendored in colcon2deb)
+from bloom_gen.api import generate_debian
 
 
 class DebianDirStatus(Enum):
@@ -86,7 +90,7 @@ def copy_or_create_debian_dir(
 ) -> DebianDirResult:
     """Generate debian directory for a single package.
 
-    Either copies from debian-overrides or runs bloom-generate.
+    Either copies from debian-overrides or uses bloom_gen library.
     """
     pkg_work_dir = pkg_build_dir / pkg_name
     pkg_config_dir = config_dir / pkg_name
@@ -134,119 +138,55 @@ def copy_or_create_debian_dir(
             )
 
         else:
-            # Generate using bloom
-            print(f"info: run bloom-generate for {pkg_name}")
+            # Generate using bloom_gen library
+            print(f"info: run bloom_gen for {pkg_name}")
 
             # Ensure ~/.config exists for bloom
             home_config = Path.home() / ".config"
             home_config.mkdir(parents=True, exist_ok=True)
 
-            # Create bloom.conf for template variables
-            bloom_conf = pkg_config_dir / "bloom.conf"
-            bloom_conf.write_text(
-                f"""# bloom.conf - Configuration for bloom-generate
-# This file sets template variables for EmPy processing
-
-[variables]
-InstallationPrefix={ros_install_prefix}
-"""
+            # Generate debian files using the library API
+            result = generate_debian(
+                package_path=pkg_dir,
+                ros_distro=ros_distro,
+                install_prefix=ros_install_prefix,
             )
 
-            # Run bloom-generate
-            env = os.environ.copy()
-            env["InstallationPrefix"] = ros_install_prefix
-
-            result = subprocess.run(
-                [
-                    "bloom-generate",
-                    "rosdebian",
-                    "--ros-distro",
-                    ros_distro,
-                    str(pkg_dir),
-                ],
-                cwd=pkg_config_dir,
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-
-            out_file.write_text(result.stdout)
-            err_file.write_text(result.stderr)
-
-            if result.returncode != 0:
+            if not result.success:
+                err_file.write_text(result.error or "Unknown error")
                 return DebianDirResult(
                     package=pkg_name,
                     pkg_dir=pkg_dir,
                     status=DebianDirStatus.FAILED,
                     method="bloom",
-                    error=f"bloom-generate failed: {result.stderr}",
+                    error=f"bloom_gen failed: {result.error}",
                 )
 
-            # Apply custom rules.em template if available
-            custom_rules_template = script_dir.parent / "templates" / "debian" / "rules.em"
-            if custom_rules_template.is_file():
-                print(f"info: applying custom rules.em template for {pkg_name}")
+            out_file.write_text(f"Generated debian directory at {result.debian_dir}\n")
 
-                # Copy custom template
-                pkg_rules_em = pkg_config_dir / "debian" / "rules.em"
-                pkg_rules_em.parent.mkdir(parents=True, exist_ok=True)
+            # The library generates debian/ in pkg_dir, copy to cache (config_dir) and work dir
+            generated_debian_dir = pkg_dir / "debian"
 
-                with open(custom_rules_template) as src:
-                    pkg_rules_em.write_text(src.read())
+            if generated_debian_dir.is_dir():
+                # Cache to config_dir for subsequent builds
+                cache_debian_dir = pkg_config_dir / "debian"
+                if cache_debian_dir.exists():
+                    shutil.rmtree(cache_debian_dir)
+                shutil.copytree(generated_debian_dir, cache_debian_dir)
 
-                # Reprocess with bloom
-                result = subprocess.run(
-                    [
-                        "bloom-generate",
-                        "rosdebian",
-                        "--process-template-files",
-                        "--ros-distro",
-                        ros_distro,
-                        str(pkg_dir),
-                    ],
-                    cwd=pkg_config_dir,
-                    capture_output=True,
-                    text=True,
-                    env=env,
+                # Copy to work dir
+                if dst_debian_dir.exists():
+                    shutil.rmtree(dst_debian_dir)
+                shutil.copytree(generated_debian_dir, dst_debian_dir)
+
+                # Clean up debian dir from source package dir
+                shutil.rmtree(generated_debian_dir)
+
+                out_file.write_text(
+                    out_file.read_text() +
+                    f"Cached to {cache_debian_dir}\n"
+                    f"Copied to {dst_debian_dir}\n"
                 )
-
-                # Append to log files
-                with open(out_file, "a") as f:
-                    f.write(result.stdout)
-                with open(err_file, "a") as f:
-                    f.write(result.stderr)
-
-                if result.returncode != 0:
-                    return DebianDirResult(
-                        package=pkg_name,
-                        pkg_dir=pkg_dir,
-                        status=DebianDirStatus.FAILED,
-                        method="bloom",
-                        error=f"bloom-generate template processing failed: {result.stderr}",
-                    )
-
-            # Copy generated debian dir to work dir
-            src_generated = pkg_config_dir / "debian"
-            if src_generated.is_dir():
-                result = subprocess.run(
-                    ["rsync", "-av", "--delete", f"{src_generated}/", f"{dst_debian_dir}/"],
-                    capture_output=True,
-                    text=True,
-                )
-
-                with open(out_file, "a") as f:
-                    f.write(result.stdout)
-                with open(err_file, "a") as f:
-                    f.write(result.stderr)
-
-                if result.returncode != 0:
-                    return DebianDirResult(
-                        package=pkg_name,
-                        pkg_dir=pkg_dir,
-                        status=DebianDirStatus.FAILED,
-                        method="bloom",
-                        error=f"rsync of generated debian dir failed: {result.stderr}",
-                    )
 
             return DebianDirResult(
                 package=pkg_name,
@@ -256,7 +196,8 @@ InstallationPrefix={ros_install_prefix}
             )
 
     except Exception as e:
-        err_file.write_text(str(e))
+        import traceback
+        err_file.write_text(f"{e}\n{traceback.format_exc()}")
         return DebianDirResult(
             package=pkg_name,
             pkg_dir=pkg_dir,

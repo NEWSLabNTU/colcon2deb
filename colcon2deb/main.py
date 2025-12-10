@@ -525,6 +525,10 @@ def main():
     print(f"\n  ROS Distribution: {ros_distro}")
     print(f"  Install Prefix: {install_prefix}")
 
+    # Custom bloom directory (for --install-prefix support)
+    # bloom_gen is vendored inside colcon2deb/bloom/bloom_gen/
+    bloom_dir = script_dir / "bloom"
+
     # Prepare Docker run command
     docker_cmd = [
         "docker",
@@ -537,6 +541,8 @@ def main():
         f"ROS_DISTRO={ros_distro}",
         "-e",
         f"ROS_INSTALL_PREFIX={install_prefix}",
+        "-e",
+        "PYTHONPATH=/bloom",
         "-v",
         "/tmp/.X11-unix/:/tmp/.X11-unix",
         "-v",
@@ -545,6 +551,8 @@ def main():
         f"{packages_dir}:/config",
         "-v",
         f"{helper_dir}:/helper",
+        "-v",
+        f"{bloom_dir}:/bloom",
         "-v",
         f"{output_dir}:/output",
         image_name,

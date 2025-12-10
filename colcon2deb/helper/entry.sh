@@ -102,5 +102,7 @@ chown -R "$name:$name" /workspace
 
 # Run the build script
 # Both workspace and output are always required now
+# Preserve environment variables for custom bloom_gen and install prefix
 sudo -u ubuntu \
+     env PYTHONPATH="$PYTHONPATH" ROS_DISTRO="$ROS_DISTRO" ROS_INSTALL_PREFIX="$ROS_INSTALL_PREFIX" \
      bash -c "rosdep update && python3 '$script_dir/main.py' --workspace=/workspace --output='$output' --log-dir='$log_dir' $skip_opts"

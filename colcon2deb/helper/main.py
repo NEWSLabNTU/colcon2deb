@@ -408,6 +408,16 @@ def main() -> int:
                         key, _, value = line.partition("=")
                         env[key] = value
 
+            # Ensure /bloom is at the FRONT of PYTHONPATH for bloom_gen imports
+            pythonpath = env.get("PYTHONPATH", "")
+            if "/bloom" not in pythonpath:
+                env["PYTHONPATH"] = f"/bloom:{pythonpath}" if pythonpath else "/bloom"
+            elif not pythonpath.startswith("/bloom"):
+                # /bloom is present but not at front - move it to front
+                paths = pythonpath.split(":")
+                paths = [p for p in paths if p != "/bloom"]
+                env["PYTHONPATH"] = "/bloom:" + ":".join(paths)
+
     # Phase 5: Generate rosdep list
     if last_failing_phase is None:
         print_phase("Phase 5: Generating rosdep list")
