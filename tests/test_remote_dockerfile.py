@@ -10,7 +10,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from colcon2deb import download_dockerfile
+from colcon2deb.main import download_dockerfile
 
 def test_download():
     """Test downloading a Dockerfile from a URL."""

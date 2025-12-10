@@ -1,6 +1,7 @@
 # justfile for colcon2deb project
 
-VERSION := "0.2.0"
+# Read version from pyproject.toml (single source of truth)
+VERSION := `grep '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/'`
 
 # Show available recipes
 default:
@@ -49,7 +50,7 @@ install:
 install-dev:
     @echo "Installing in development mode..."
     uv sync
-    @echo "Installed. Use 'uv run autoware-deb-builder --help' to test."
+    @echo "Installed. Use 'uv run colcon2deb --help' to test."
 
 # Build Debian packages from workspace
 build-workspace workspace output *args:
@@ -58,7 +59,7 @@ build-workspace workspace output *args:
     echo "Building Debian packages..."
     echo "  Workspace: {{workspace}}"
     echo "  Output: {{output}}"
-    uv run python -m autoware_debian_packager.main \
+    uv run python -m colcon2deb.main \
         --workspace {{workspace}} \
         --output {{output}} \
         {{args}}
@@ -73,7 +74,7 @@ build-example example:
         echo "Please prepare the workspace first. See README.md"
         exit 1
     fi
-    uv run python -m autoware_debian_packager.main \
+    uv run python -m colcon2deb.main \
         --workspace source \
         --output build
 
@@ -98,3 +99,19 @@ clean-examples:
         fi
     done
     @echo "Cleaned example build directories"
+
+# Bump version number (pyproject.toml is single source of truth)
+bump-version new_version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    OLD_VERSION=$(grep '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+    echo "Bumping version from $OLD_VERSION to {{new_version}}"
+
+    # Update pyproject.toml (single source of truth)
+    sed -i 's/^version = ".*"/version = "{{new_version}}"/' pyproject.toml
+
+    echo "Updated pyproject.toml"
+    echo ""
+    echo "Version bumped to {{new_version}}"
+    echo "Note: colcon2deb/__init__.py reads version dynamically from package metadata"

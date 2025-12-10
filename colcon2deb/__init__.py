@@ -1,6 +1,12 @@
 """colcon2deb - Build Debian packages from colcon workspaces in Docker containers."""
 
-__version__ = "0.2.0"
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("colcon2deb")
+except PackageNotFoundError:
+    # Package not installed, fall back to reading pyproject.toml
+    __version__ = "0.0.0-dev"
 
 from .main import main
 
