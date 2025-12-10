@@ -21,5 +21,5 @@ build:
   ros_distro: humble
   parallel_jobs: 4
   skip_tests: true
-  # Standard ROS installation prefix for testing
-  install_prefix: /opt/ros/humble
+  # Custom installation prefix for testing
+  install_prefix: /opt/autoware/test
