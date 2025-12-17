@@ -1,7 +1,16 @@
+# Helper: run command with sudo if not root
+run_privileged() {
+    if [ "$(id -u)" = "0" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
 # Run `apt update` to refresh package caches
 echo 'info: updating package lists...'
 apt_update_ts=$(date '+%Y-%m-%d_%H-%M-%S')
-sudo apt update > "$log_dir/${apt_update_ts}_apt_update.log" 2>&1 || {
+run_privileged apt update > "$log_dir/${apt_update_ts}_apt_update.log" 2>&1 || {
     echo 'warning: apt update had errors (continuing anyway)' >&2
 }
 echo '  ✓ Package lists updated'

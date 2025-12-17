@@ -74,10 +74,19 @@ echo "info: found ${#apt_packages[@]} apt packages, ${#pip_packages[@]} pip pack
 echo "#!/usr/bin/env bash"
 echo "set -e  # Exit on error"
 echo ""
+echo "# Helper: run command with sudo if not root"
+echo "run_privileged() {"
+echo "    if [ \"\$(id -u)\" = \"0\" ]; then"
+echo "        \"\$@\""
+echo "    else"
+echo "        sudo \"\$@\""
+echo "    fi"
+echo "}"
+echo ""
 
 if [ ${#apt_packages[@]} -gt 0 ]; then
     echo "echo \"Installing ${#apt_packages[@]} APT packages...\" >&2"
-    echo -n "sudo apt-get install -y"
+    echo -n "run_privileged apt-get install -y"
     for pkg in "${apt_packages[@]}"; do
         echo -n " $pkg"
     done

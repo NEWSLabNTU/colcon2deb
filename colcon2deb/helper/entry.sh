@@ -91,18 +91,16 @@ if [ -z "$uid" -o -z "$gid" ]; then
     exit 1
 fi
 
-# Create a user for the specfied uid/gid and fix file permissions
+# Create a user for the specfied uid/gid (for fixing file permissions at the end)
 name=ubuntu
-groupadd -g "$gid" "$name"
-useradd -m -u "$uid" -g "$gid" "$name"
-usermod -aG sudo "$name"
-passwd -d "$name"
-# /workspace is mounted from host, just fix permissions
-chown -R "$name:$name" /workspace
+groupadd -g "$gid" "$name" 2>/dev/null || true
+useradd -m -u "$uid" -g "$gid" "$name" 2>/dev/null || true
 
-# Run the build script
+# Run the build script as root (to avoid sudo/nosuid issues with Docker volumes)
 # Both workspace and output are always required now
 # Preserve environment variables for custom bloom_gen and install prefix
-sudo -u ubuntu \
-     env PYTHONPATH="$PYTHONPATH" ROS_DISTRO="$ROS_DISTRO" ROS_INSTALL_PREFIX="$ROS_INSTALL_PREFIX" \
-     bash -c "rosdep update && python3 '$script_dir/main.py' --workspace=/workspace --output='$output' --log-dir='$log_dir' $skip_opts"
+rosdep update
+python3 "$script_dir/main.py" --workspace=/workspace --output="$output" --log-dir="$log_dir" $skip_opts
+
+# Fix file ownership so host user can access the output
+chown -R "$uid:$gid" /output 2>/dev/null || true
