@@ -202,6 +202,14 @@ def print_summary(
                         err_file = pkg_build_dir / pkg / "build.err"
                         if err_file.exists() and err_file.stat().st_size > 0:
                             print(f"    -> Error log: {err_file}")
+                            # Print last 10 lines of error log for immediate visibility
+                            try:
+                                err_content = err_file.read_text().strip().split("\n")
+                                last_lines = err_content[-10:] if len(err_content) > 10 else err_content
+                                for line in last_lines:
+                                    print(f"       {line}")
+                            except Exception:
+                                pass
         except FileNotFoundError:
             pass
 
