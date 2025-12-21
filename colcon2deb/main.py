@@ -241,7 +241,7 @@ def download_dockerfile(url, cache_dir=None):
         sys.exit(1)
 
 
-def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None, log_dir=None):
+def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None, log_dir=None, platform=None):
     """Build Docker image from Dockerfile."""
     dockerfile_path = Path(dockerfile_path).resolve()
     if not dockerfile_path.exists():
@@ -257,12 +257,17 @@ def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None,
     cmd = [
         "docker",
         "build",
+    ]
+    # Add platform flag for cross-compilation (e.g., building arm64 on amd64 host)
+    if platform:
+        cmd.extend(["--platform", platform])
+    cmd.extend([
         str(build_context),
         "-f",
         str(dockerfile_path),
         "-t",
         image_name,
-    ]
+    ])
 
     print(f"Building Docker image '{image_name}'...")
     print(f"  Dockerfile: {dockerfile_path}")
@@ -447,6 +452,7 @@ def main():
                 docker_config.get("image_name", "colcon2deb_builder"),
                 build_context=temp_context,
                 log_dir=log_dir,
+                platform=docker_config.get("platform"),
             )
         else:
             # Local Dockerfile path
@@ -468,6 +474,7 @@ def main():
                 docker_config.get("image_name", "colcon2deb_builder"),
                 build_context=build_context,
                 log_dir=log_dir,
+                platform=docker_config.get("platform"),
             )
     else:
         image_name = docker_config["image"]
