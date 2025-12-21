@@ -96,11 +96,17 @@ name=ubuntu
 groupadd -g "$gid" "$name" 2>/dev/null || true
 useradd -m -u "$uid" -g "$gid" "$name" 2>/dev/null || true
 
+# Fix file ownership so host user can access the output
+# This runs on ANY exit (success, failure, or interrupt) to prevent
+# root-owned files from being left on the host
+fix_permissions() {
+    echo "Fixing file permissions..."
+    chown -R "$uid:$gid" /output 2>/dev/null || true
+}
+trap fix_permissions EXIT
+
 # Run the build script as root (to avoid sudo/nosuid issues with Docker volumes)
 # Both workspace and output are always required now
 # Preserve environment variables for custom bloom_gen and install prefix
 rosdep update
 python3 "$script_dir/main.py" --workspace=/workspace --output="$output" --log-dir="$log_dir" $skip_opts
-
-# Fix file ownership so host user can access the output
-chown -R "$uid:$gid" /output 2>/dev/null || true
