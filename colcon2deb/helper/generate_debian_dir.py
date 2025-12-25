@@ -14,7 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -231,7 +231,7 @@ def main() -> int:
     # Process packages in parallel
     results: list[DebianDirResult] = []
 
-    with ThreadPoolExecutor(max_workers=njobs) as executor:
+    with ProcessPoolExecutor(max_workers=njobs) as executor:
         futures = {
             executor.submit(
                 copy_or_create_debian_dir,
