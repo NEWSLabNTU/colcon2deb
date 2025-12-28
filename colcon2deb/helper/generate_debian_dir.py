@@ -87,6 +87,7 @@ def copy_or_create_debian_dir(
     script_dir: Path,
     ros_distro: str,
     ros_install_prefix: str,
+    peer_packages: list[str],
 ) -> DebianDirResult:
     """Generate debian directory for a single package.
 
@@ -150,6 +151,7 @@ def copy_or_create_debian_dir(
                 package_path=pkg_dir,
                 ros_distro=ros_distro,
                 install_prefix=ros_install_prefix,
+                peer_packages=peer_packages,
             )
 
             if not result.success:
@@ -224,6 +226,9 @@ def main() -> int:
     packages = get_package_list(colcon_work_dir)
     print(f"info: found {len(packages)} packages")
 
+    # Get all package names for peer_packages (to skip rosdep resolution for workspace packages)
+    all_package_names = [pkg_name for pkg_name, _ in packages]
+
     # Use half the CPU cores for I/O-heavy operations
     njobs = max(1, (os.cpu_count() or 1 + 1) // 2)
     print(f"info: using {njobs} parallel workers")
@@ -242,6 +247,7 @@ def main() -> int:
                 script_dir,
                 ros_distro,
                 ros_install_prefix,
+                all_package_names,  # Pass all packages as peer_packages
             ): pkg_name
             for pkg_name, pkg_dir in packages
         }
