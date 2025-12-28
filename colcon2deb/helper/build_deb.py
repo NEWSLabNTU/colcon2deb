@@ -101,6 +101,7 @@ def build_single_package(
     check_dir: Path,
     ros_distro: str,
     ros_install_prefix: str,
+    colcon_install_path: str,
 ) -> BuildResult:
     """Build a single Debian package.
 
@@ -161,6 +162,7 @@ def build_single_package(
         # Build the package
         env = os.environ.copy()
         env["ROS_INSTALL_PREFIX"] = ros_install_prefix
+        env["COLCON_INSTALL_PATH"] = colcon_install_path
         env["DEB_BUILD_OPTIONS"] = f"parallel={os.cpu_count() or 1}"
 
         result = subprocess.run(
@@ -231,6 +233,7 @@ def main() -> int:
     log_dir = get_env_path("log_dir")
     ros_distro = get_env_str("ROS_DISTRO", "humble")
     ros_install_prefix = get_env_str("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
+    colcon_install_path = str(colcon_work_dir / "install")
 
     # Status files - use environment variables if set, else defaults (no number prefix for outcome files)
     successful_pkgs_file = Path(
@@ -266,6 +269,7 @@ def main() -> int:
                 check_dir,
                 ros_distro,
                 ros_install_prefix,
+                colcon_install_path,
             ): pkg_name
             for pkg_name, pkg_dir in packages
         }
