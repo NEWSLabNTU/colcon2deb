@@ -1,5 +1,6 @@
 cd "$colcon_work_dir"
-source /opt/ros/humble/setup.bash
+
+# Note: ROS environment should already be set up by /colcon2deb-setup.sh in entry.sh
 
 if [ "$colcon_build" = y ]; then
     echo 'info: compiling packages (this may take a while...)'
@@ -8,9 +9,16 @@ if [ "$colcon_build" = y ]; then
     colcon_ts=$(date '+%Y-%m-%d_%H-%M-%S')
     colcon_log="$log_dir/${colcon_ts}_colcon_build.log"
 
+    # Build cmake args: always include Release build type
+    # Users can add custom args via COLCON2DEB_CMAKE_ARGS environment variable
+    cmake_args="-DCMAKE_BUILD_TYPE=Release"
+    if [ -n "$COLCON2DEB_CMAKE_ARGS" ]; then
+        cmake_args="$cmake_args $COLCON2DEB_CMAKE_ARGS"
+    fi
+
     # Redirect detailed output to log file, show progress only
     colcon build --base-paths src \
-        --cmake-args -DCMAKE_BUILD_TYPE=Release \
+        --cmake-args $cmake_args \
         --event-handlers console_direct+ \
         > "$colcon_log" 2>&1 || {
         echo 'error: colcon build failed' >&2
