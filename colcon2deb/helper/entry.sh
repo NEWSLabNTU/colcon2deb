@@ -107,6 +107,15 @@ trap fix_permissions EXIT
 
 # Run the build script as root (to avoid sudo/nosuid issues with Docker volumes)
 # Both workspace and output are always required now
-# Preserve environment variables for custom bloom_gen and install prefix
+#
+# Source optional user-provided setup script if it exists.
+# Users can create /colcon2deb-setup.sh in their Docker image to set up
+# ROS environment or any other build dependencies. Example:
+#   RUN echo 'source /opt/ros/humble/setup.bash' > /colcon2deb-setup.sh
+if [ -f "/colcon2deb-setup.sh" ]; then
+    echo "Sourcing /colcon2deb-setup.sh..."
+    source /colcon2deb-setup.sh
+fi
+
 rosdep update
 python3 "$script_dir/main.py" --workspace=/workspace --output="$output" --log-dir="$log_dir" $skip_opts
