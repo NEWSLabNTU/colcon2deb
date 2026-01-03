@@ -5,7 +5,7 @@ This script generates debian/ directories for each package using either:
 1. Pre-defined debian-overrides (copied from config_dir)
 2. rosdeb_bloom library (auto-generated)
 
-Uses ThreadPoolExecutor for parallel execution.
+Uses ProcessPoolExecutor for parallel execution.
 """
 
 from __future__ import annotations
