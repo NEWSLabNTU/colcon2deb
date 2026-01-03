@@ -537,12 +537,19 @@ def main():
     # Default: /opt/ros/{ros_distro}
     install_prefix = build_config.get("install_prefix", f"/opt/ros/{ros_distro}")
 
+    # Get package suffix configuration (optional)
+    # Example: "1.5.0" results in packages like ros-humble-autoware-utils-1.5.0
+    package_suffix = build_config.get("package_suffix")
+
     print(f"\n  ROS Distribution: {ros_distro}")
     print(f"  Install Prefix: {install_prefix}")
 
     # Custom bloom directory (for --install-prefix support)
     # bloom_gen is vendored inside colcon2deb/bloom/bloom_gen/
     bloom_dir = script_dir / "bloom"
+    if package_suffix:
+        print(f"  Package Suffix: {package_suffix}")
+
 
     # Prepare Docker run command
     docker_cmd = [
@@ -558,6 +565,7 @@ def main():
         f"ROS_INSTALL_PREFIX={install_prefix}",
         "-e",
         "PYTHONPATH=/bloom",
+        f"ROS_PACKAGE_SUFFIX={package_suffix or ''}",
         "-v",
         "/tmp/.X11-unix/:/tmp/.X11-unix",
         "-v",

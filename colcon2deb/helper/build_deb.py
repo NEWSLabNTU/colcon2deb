@@ -79,16 +79,22 @@ def get_package_list(colcon_work_dir: Path) -> list[tuple[str, Path]]:
     return packages
 
 
-def find_deb_file(directory: Path, ros_distro: str, pkg_name_dashed: str) -> Path | None:
+def find_deb_file(directory: Path, ros_distro: str, pkg_name_dashed: str, package_suffix: str | None = None) -> Path | None:
     """Find a .deb file matching the package pattern."""
-    pattern = f"ros-{ros_distro}-{pkg_name_dashed}_*.deb"
+    if package_suffix:
+        pattern = f"ros-{ros_distro}-{pkg_name_dashed}-{package_suffix}_*.deb"
+    else:
+        pattern = f"ros-{ros_distro}-{pkg_name_dashed}_*.deb"
     matches = list(directory.glob(pattern))
     return matches[0] if matches else None
 
 
-def find_ddeb_file(directory: Path, ros_distro: str, pkg_name_dashed: str) -> Path | None:
+def find_ddeb_file(directory: Path, ros_distro: str, pkg_name_dashed: str, package_suffix: str | None = None) -> Path | None:
     """Find a .ddeb debug file matching the package pattern."""
-    pattern = f"ros-{ros_distro}-{pkg_name_dashed}-dbgsym_*.ddeb"
+    if package_suffix:
+        pattern = f"ros-{ros_distro}-{pkg_name_dashed}-{package_suffix}-dbgsym_*.ddeb"
+    else:
+        pattern = f"ros-{ros_distro}-{pkg_name_dashed}-dbgsym_*.ddeb"
     matches = list(directory.glob(pattern))
     return matches[0] if matches else None
 
@@ -102,6 +108,7 @@ def build_single_package(
     ros_distro: str,
     ros_install_prefix: str,
     colcon_install_path: str,
+    package_suffix: str | None = None,
 ) -> BuildResult:
     """Build a single Debian package.
 
@@ -121,7 +128,7 @@ def build_single_package(
 
     try:
         # Check if package is already built
-        existing_deb = find_deb_file(check_dir, ros_distro, pkg_name_dashed)
+        existing_deb = find_deb_file(check_dir, ros_distro, pkg_name_dashed, package_suffix)
         if existing_deb:
             print(f"info: skip {pkg_name} that its Debian package is already built")
             return BuildResult(
@@ -186,7 +193,7 @@ def build_single_package(
 
         # Find and move .deb file
         parent_dir = pkg_dir.parent
-        deb_file = find_deb_file(parent_dir, ros_distro, pkg_name_dashed)
+        deb_file = find_deb_file(parent_dir, ros_distro, pkg_name_dashed, package_suffix)
 
         if deb_file:
             dest_deb = release_dir / deb_file.name
@@ -194,7 +201,7 @@ def build_single_package(
             print(f"info: build successful for {pkg_name}")
 
             # Also move .ddeb if exists
-            ddeb_file = find_ddeb_file(parent_dir, ros_distro, pkg_name_dashed)
+            ddeb_file = find_ddeb_file(parent_dir, ros_distro, pkg_name_dashed, package_suffix)
             if ddeb_file:
                 dest_ddeb = release_dir / ddeb_file.name
                 shutil.move(str(ddeb_file), str(dest_ddeb))
@@ -234,6 +241,8 @@ def main() -> int:
     ros_distro = get_env_str("ROS_DISTRO", "humble")
     ros_install_prefix = get_env_str("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
     colcon_install_path = str(colcon_work_dir / "install")
+    # Optional package suffix (e.g., "1.5.0" for ros-humble-pkg-1.5.0)
+    package_suffix = os.environ.get("ROS_PACKAGE_SUFFIX") or None
 
     # Status files - use environment variables if set, else defaults (no number prefix for outcome files)
     successful_pkgs_file = Path(
@@ -270,6 +279,7 @@ def main() -> int:
                 ros_distro,
                 ros_install_prefix,
                 colcon_install_path,
+                package_suffix,
             ): pkg_name
             for pkg_name, pkg_dir in packages
         }

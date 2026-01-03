@@ -310,6 +310,8 @@ def main() -> int:
     print_phase("Build Configuration")
     print(f"  ROS Distribution: {ros_distro}")
     print(f"  Install Prefix: {ros_install_prefix}")
+    # Optional package suffix (e.g., "1.5.0" for ros-humble-pkg-1.5.0)
+    ros_package_suffix = os.environ.get("ROS_PACKAGE_SUFFIX", "")
 
     # Set up directory paths
     top_work_dir = output_dir
@@ -361,6 +363,7 @@ def main() -> int:
             "skipped_pkgs_file": str(skipped_pkgs_file),
             "ROS_DISTRO": ros_distro,
             "ROS_INSTALL_PREFIX": ros_install_prefix,
+            "ROS_PACKAGE_SUFFIX": ros_package_suffix,
             "rosdep_install": "n" if args.skip_rosdep_install else "y",
             "copy_src": "n" if args.skip_copy_src else "y",
             "gen_rosdep_list": "n" if args.skip_gen_rosdep_list else "y",

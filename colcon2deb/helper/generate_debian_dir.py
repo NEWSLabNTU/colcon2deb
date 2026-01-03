@@ -88,6 +88,7 @@ def copy_or_create_debian_dir(
     ros_distro: str,
     ros_install_prefix: str,
     peer_packages: list[str],
+    package_suffix: str | None = None,
 ) -> DebianDirResult:
     """Generate debian directory for a single package.
 
@@ -152,6 +153,7 @@ def copy_or_create_debian_dir(
                 ros_distro=ros_distro,
                 install_prefix=ros_install_prefix,
                 peer_packages=peer_packages,
+                package_suffix=package_suffix,
             )
 
             if not result.success:
@@ -218,6 +220,8 @@ def main() -> int:
     script_dir = get_env_path("script_dir")
     ros_distro = get_env_str("ROS_DISTRO", "humble")
     ros_install_prefix = get_env_str("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
+    # Optional package suffix (e.g., "1.5.0" for ros-humble-pkg-1.5.0)
+    package_suffix = os.environ.get("ROS_PACKAGE_SUFFIX") or None
 
     os.chdir(colcon_work_dir)
     print("info: generate Debian packaging scripts")
@@ -248,6 +252,7 @@ def main() -> int:
                 ros_distro,
                 ros_install_prefix,
                 all_package_names,  # Pass all packages as peer_packages
+                package_suffix,
             ): pkg_name
             for pkg_name, pkg_dir in packages
         }
