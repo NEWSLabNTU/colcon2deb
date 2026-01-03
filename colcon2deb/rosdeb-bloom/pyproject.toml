@@ -1,0 +1,76 @@
+[project]
+name = "rosdeb-bloom"
+version = "0.14.0"
+description = "ROS Debian package generator (patched bloom fork for colcon2deb)"
+readme = "README.rst"
+license = { text = "BSD" }
+authors = [
+    { name = "Tully Foote", email = "tfoote@openrobotics.org" },
+    { name = "William Woodall", email = "william@openrobotics.org" },
+]
+maintainers = [
+    { name = "William Woodall", email = "william@openrobotics.org" },
+]
+keywords = ["ROS", "release", "automation", "debian", "packaging"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: POSIX :: Linux",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "catkin-pkg>=0.4.3",
+    "setuptools",
+    "empy<4",
+    "packaging",
+    "python-dateutil",
+    "pyyaml",
+    "rosdep>=0.15.0",
+    "rosdistro>=0.8.0",
+    "vcstools>=0.1.22",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "ruff",
+]
+
+[project.urls]
+Homepage = "http://www.ros.org/wiki/bloom"
+Repository = "https://github.com/ros-infrastructure/bloom"
+
+[project.scripts]
+rosdeb-bloom-generate = "rosdeb_bloom.commands.generate:main"
+
+[project.entry-points."rosdeb_bloom.generators"]
+debian = "rosdeb_bloom.generators.debian:DebianGenerator"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rosdeb_bloom"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "rosdeb_bloom/**",
+    "README.rst",
+    "LICENSE.txt",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]  # Line too long - bloom has many long lines
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+junit_suite_name = "rosdeb_bloom"

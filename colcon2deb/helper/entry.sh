@@ -118,4 +118,9 @@ if [ -f "/colcon2deb-setup.sh" ]; then
 fi
 
 rosdep update
+
+# Install dependencies for helper scripts
+echo "Installing rosdeb-bloom and rich..."
+pip install --quiet /rosdeb-bloom rich
+
 python3 "$script_dir/main.py" --workspace=/workspace --output="$output" --log-dir="$log_dir" $skip_opts

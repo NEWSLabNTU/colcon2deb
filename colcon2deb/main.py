@@ -543,13 +543,15 @@ def main():
 
     print(f"\n  ROS Distribution: {ros_distro}")
     print(f"  Install Prefix: {install_prefix}")
-
-    # Custom bloom directory (for --install-prefix support)
-    # bloom_gen is vendored inside colcon2deb/bloom/bloom_gen/
-    bloom_dir = script_dir / "bloom"
     if package_suffix:
         print(f"  Package Suffix: {package_suffix}")
 
+    # rosdeb-bloom is the vendored debian generator library inside colcon2deb
+    rosdeb_bloom_dir = script_dir / "rosdeb-bloom"
+    if not rosdeb_bloom_dir.exists():
+        print("Error: rosdeb-bloom directory not found", file=sys.stderr)
+        print(f"Expected at: {rosdeb_bloom_dir}", file=sys.stderr)
+        sys.exit(1)
 
     # Prepare Docker run command
     docker_cmd = [
@@ -564,7 +566,6 @@ def main():
         "-e",
         f"ROS_INSTALL_PREFIX={install_prefix}",
         "-e",
-        "PYTHONPATH=/bloom",
         f"ROS_PACKAGE_SUFFIX={package_suffix or ''}",
         "-v",
         "/tmp/.X11-unix/:/tmp/.X11-unix",
@@ -575,16 +576,19 @@ def main():
         "-v",
         f"{helper_dir}:/helper",
         "-v",
-        f"{bloom_dir}:/bloom",
-        "-v",
         f"{output_dir}:/output",
+        "-v",
+        f"{rosdeb_bloom_dir}:/rosdeb-bloom:ro",
+    ]
+
+    docker_cmd.extend([
         image_name,
         "/helper/entry.sh",
         f"--uid={uid}",
         f"--gid={gid}",
         "--output=/output",
         f"--log-dir=/output/log/{log_timestamp}",
-    ]
+    ])
 
     # Add skip options if specified
     if args.skip_rosdep_install:

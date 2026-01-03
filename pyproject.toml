@@ -32,7 +32,7 @@ dev = [
 line-length = 100
 target-version = "py310"
 extend-exclude = [
-    "colcon2deb/bloom",  # Vendored bloom package
+    "colcon2deb/rosdeb-bloom",  # Vendored rosdeb-bloom package
 ]
 
 [tool.ruff.lint]
@@ -60,20 +60,29 @@ packages = ["colcon2deb"]
 include = [
     "colcon2deb/**/*.py",
     "colcon2deb/helper/**/*.sh",
-    "templates/**/*",
+    "colcon2deb/rosdeb-bloom/**/*.em",
+    "colcon2deb/rosdeb-bloom/pyproject.toml",
+    "colcon2deb/rosdeb-bloom/README.rst",
+    "colcon2deb/rosdeb-bloom/LICENSE.txt",
 ]
 exclude = [
     "**/__pycache__",
     "**/*.pyc",
     "makedeb/**/*",
     "examples/**/*",
+    "colcon2deb/rosdeb-bloom/test/**/*",
+    "colcon2deb/rosdeb-bloom/docs/**/*",
+    "colcon2deb/rosdeb-bloom/.ruff_cache/**/*",
 ]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "colcon2deb/**/*.py",
     "colcon2deb/helper/**/*.sh",
-    "templates/**/*",
+    "colcon2deb/rosdeb-bloom/**/*.em",
+    "colcon2deb/rosdeb-bloom/pyproject.toml",
+    "colcon2deb/rosdeb-bloom/README.rst",
+    "colcon2deb/rosdeb-bloom/LICENSE.txt",
     "examples/*/config.yaml",
     "README.md",
     "LICENSE",
@@ -83,6 +92,9 @@ exclude = [
     "**/*.pyc",
     "makedeb/**/*",
     "examples/*/debian-overrides/**/*",
+    "colcon2deb/rosdeb-bloom/test/**/*",
+    "colcon2deb/rosdeb-bloom/docs/**/*",
+    "colcon2deb/rosdeb-bloom/.ruff_cache/**/*",
 ]
 
 [tool.pytest.ini_options]

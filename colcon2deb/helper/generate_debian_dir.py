@@ -3,7 +3,7 @@
 
 This script generates debian/ directories for each package using either:
 1. Pre-defined debian-overrides (copied from config_dir)
-2. bloom_gen library (auto-generated)
+2. rosdeb_bloom library (auto-generated)
 
 Uses ThreadPoolExecutor for parallel execution.
 """
@@ -20,8 +20,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal
 
-# Import bloom_gen library (vendored in colcon2deb)
-from bloom_gen.api import generate_debian
+# Import rosdeb_bloom library (pip installed from /rosdeb-bloom in container)
+from rosdeb_bloom.api import generate_debian
 
 
 class DebianDirStatus(Enum):
@@ -92,7 +92,7 @@ def copy_or_create_debian_dir(
 ) -> DebianDirResult:
     """Generate debian directory for a single package.
 
-    Either copies from debian-overrides or uses bloom_gen library.
+    Either copies from debian-overrides or uses rosdeb_bloom library.
     """
     pkg_work_dir = pkg_build_dir / pkg_name
     pkg_config_dir = config_dir / pkg_name
@@ -140,8 +140,8 @@ def copy_or_create_debian_dir(
             )
 
         else:
-            # Generate using bloom_gen library
-            print(f"info: run bloom_gen for {pkg_name}")
+            # Generate using rosdeb_bloom library
+            print(f"info: run rosdeb_bloom for {pkg_name}")
 
             # Ensure ~/.config exists for bloom
             home_config = Path.home() / ".config"
@@ -163,7 +163,7 @@ def copy_or_create_debian_dir(
                     pkg_dir=pkg_dir,
                     status=DebianDirStatus.FAILED,
                     method="bloom",
-                    error=f"bloom_gen failed: {result.error}",
+                    error=f"rosdeb_bloom failed: {result.error}",
                 )
 
             out_file.write_text(f"Generated debian directory at {result.debian_dir}\n")
