@@ -163,6 +163,15 @@ def build_single_package(
         for old_deb in pkg_dir.glob(f"ros-{ros_distro}-{pkg_name_dashed}_*.deb"):
             old_deb.unlink()
 
+        # Clean up debhelper state files from source debian directory
+        # These files cause dh to skip configure/build phases if left from a previous run
+        debhelper_dir = src_debian_dir / ".debhelper"
+        if debhelper_dir.exists():
+            shutil.rmtree(debhelper_dir)
+        debhelper_stamp = src_debian_dir / "debhelper-build-stamp"
+        if debhelper_stamp.exists():
+            debhelper_stamp.unlink()
+
         # Copy debian directory to package
         shutil.copytree(src_debian_dir, dst_debian_dir)
 
