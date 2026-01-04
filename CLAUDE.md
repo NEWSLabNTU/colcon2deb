@@ -17,7 +17,7 @@ This project builds Debian packages from ROS 2 colcon workspaces in isolated Doc
 
 **Architecture**: All build logic is implemented in Python modules. The `colcon2deb` package is mounted into Docker containers and installed on-the-fly.
 
-**Vendored bloom**: The project includes a vendored `bloom_gen` package (fork of ros/bloom) in `colcon2deb/bloom/` as a git submodule. This provides custom install prefix support and ament_python environment hooks.
+**Vendored rosdeb-bloom**: The project includes a vendored `rosdeb-bloom` package (fork of ros/bloom) in `colcon2deb/rosdeb-bloom/`. This provides custom install prefix support and ament_python environment hooks. It is pip-installed in the container at runtime.
 
 **Autoware Examples**: For Autoware-specific build configurations and examples, see [autoware-localrepo](https://github.com/NEWSLabNTU/autoware-localrepo).
 
@@ -102,13 +102,13 @@ git push origin vX.Y.Z
 - `colcon2deb/` - Main Python package
   - `main.py` - Host-side CLI and Docker orchestration
   - `helper/` - Scripts that run inside Docker container
-    - `entry.sh` - Container entry point
+    - `entry.sh` - Container entry point (pip installs rosdeb-bloom)
     - `main.py` - Build orchestrator inside container
     - `generate_debian_dir.py` - Debian metadata generation
     - `build_deb.py` - Package building
-  - `bloom/` - Vendored bloom_gen submodule (git submodule)
-    - `bloom_gen/` - Modified bloom package with install prefix support
-    - `bloom_gen/generators/debian/templates/` - Debian packaging templates
+  - `rosdeb-bloom/` - Vendored Debian generator (pip-installed in container)
+    - `rosdeb_bloom/` - Modified bloom package with install prefix support
+    - `rosdeb_bloom/generators/debian/templates/` - Debian packaging templates
 - `templates/` - Templates for package generation
 - `tests/` - Test suite
 - `examples/` - Example configurations
@@ -119,14 +119,14 @@ git push origin vX.Y.Z
 
 ### Build Process Flow
 1. Host `colcon2deb/main.py` reads config and launches Docker container
-2. Container mounts workspace, output dir, helper scripts, and bloom_gen
-3. Container entry point (`helper/entry.sh`) sets up user and environment
+2. Container mounts workspace, output dir, helper scripts, and rosdeb-bloom
+3. Container entry point (`helper/entry.sh`) pip installs rosdeb-bloom and sets up user
 4. `helper/main.py` orchestrates the build phases:
    - Phase 1-3: Setup directories, copy sources
    - Phase 4: Build workspace with colcon
    - Phase 5: Install rosdep dependencies
    - Phase 6: Generate rosdep mappings
-   - Phase 7: Generate debian directories (using bloom_gen)
+   - Phase 7: Generate debian directories (using rosdeb_bloom)
    - Phase 8: Build .deb packages
 
 ### Key Design Principles
@@ -134,7 +134,7 @@ git push origin vX.Y.Z
 - **Read-only source mounts** - Prevents accidental modifications
 - **Isolated builds** - Everything runs in Docker containers
 - **Custom install prefix** - Configurable via `install_prefix` in config.yaml
-- **Vendored bloom** - Modified bloom_gen with install prefix and ament_python fixes
+- **Vendored rosdeb-bloom** - Modified bloom with install prefix and ament_python fixes
 
 ## Configuration File Format
 
@@ -165,31 +165,24 @@ install_prefix: /opt/autoware/custom
 
 - `colcon2deb/main.py` - Host-side CLI and Docker orchestration
 - `colcon2deb/helper/main.py` - Container-side build orchestrator
-- `colcon2deb/helper/generate_debian_dir.py` - Uses bloom_gen to generate debian/
-- `colcon2deb/bloom/bloom_gen/api.py` - Library API for debian generation
-- `colcon2deb/bloom/bloom_gen/generators/debian/templates/` - Package templates
+- `colcon2deb/helper/generate_debian_dir.py` - Uses rosdeb_bloom to generate debian/
+- `colcon2deb/rosdeb-bloom/rosdeb_bloom/api.py` - Library API for debian generation
+- `colcon2deb/rosdeb-bloom/rosdeb_bloom/generators/debian/templates/` - Package templates
 - `pyproject.toml` - Project configuration, dependencies, ruff config
 - `justfile` - Build automation (build, install, test, bump-version)
 
-## Vendored bloom_gen
+## Vendored rosdeb-bloom
 
-The `colcon2deb/bloom/` directory is a git submodule containing a modified bloom package:
+The `colcon2deb/rosdeb-bloom/` directory contains an embedded modified bloom package:
 
-- Renamed from `bloom` to `bloom_gen` to avoid import conflicts
+- Renamed from `bloom` to `rosdeb_bloom` to avoid import conflicts
 - Added `--install-prefix` support for custom installation paths
 - Fixed `ament_python/rules.em` template to generate environment hooks:
   - Creates `hook/pythonpath.{sh,dsv}` for PYTHONPATH setup
   - Creates `hook/ament_prefix_path.{sh,dsv}` for AMENT_PREFIX_PATH
   - Creates `local_setup.{bash,sh,zsh}` for environment sourcing
 
-### Updating bloom submodule
-```bash
-cd colcon2deb/bloom
-git pull origin colcon2deb
-cd ../..
-git add colcon2deb/bloom
-git commit -m "Update bloom submodule"
-```
+The package is pip-installed from `/rosdeb-bloom` inside the container by `entry.sh`.
 
 ## Debugging
 
@@ -206,11 +199,10 @@ Logs are in `build/log/<timestamp>/`:
    rm -rf debian-overrides/*/debian/
    ```
 
-2. **bloom_gen import errors**: Ensure PYTHONPATH includes `/bloom` in container
+2. **rosdeb_bloom import errors**: Ensure rosdeb-bloom is properly pip-installed in container
 
 3. **Permission errors**: Helper scripts need read permission (`chmod a+r`)
 
 ## Related Projects
 
 - [autoware-localrepo](https://github.com/NEWSLabNTU/autoware-localrepo) - Autoware build configurations and APT repository builder
-- [bloom](https://github.com/jerry73204/bloom) - Forked bloom with colcon2deb branch
