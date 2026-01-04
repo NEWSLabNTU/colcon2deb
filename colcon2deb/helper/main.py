@@ -21,11 +21,73 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from dataclasses import dataclass
+from enum import Enum
 
-def print_phase(message: str) -> None:
-    """Print a timestamped phase message."""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"\n[{timestamp}] {message}")
+from rich.console import Console
+
+
+class PhaseStatus(Enum):
+    """Status of a build phase."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+@dataclass
+class Phase:
+    """Represents a build phase."""
+
+    name: str
+    description: str
+    status: PhaseStatus = PhaseStatus.PENDING
+
+
+class SimpleBuildUI:
+    """Simple UI for build progress display."""
+
+    def __init__(self) -> None:
+        self.console = Console()
+        self.phases: dict[str, Phase] = {}
+        self.phase_order: list[str] = []
+        self.current_phase: str | None = None
+
+    def add_phase(self, phase_id: str, description: str) -> None:
+        """Add a new phase to track."""
+        self.phases[phase_id] = Phase(name=phase_id, description=description)
+        self.phase_order.append(phase_id)
+
+    def start_phase(self, phase_id: str, log_file: Path | None = None) -> None:
+        """Mark a phase as running."""
+        if phase_id in self.phases:
+            self.phases[phase_id].status = PhaseStatus.RUNNING
+            self.current_phase = phase_id
+            phase = self.phases[phase_id]
+            self.console.print(f"[blue]●[/blue] {phase.description}...", highlight=False)
+
+    def complete_phase(self, phase_id: str, success: bool = True) -> None:
+        """Mark a phase as completed or failed."""
+        if phase_id in self.phases:
+            phase = self.phases[phase_id]
+            if success:
+                phase.status = PhaseStatus.COMPLETED
+                self.console.print("  [green]✓[/green] Done", highlight=False)
+            else:
+                phase.status = PhaseStatus.FAILED
+                self.console.print("  [red]✗[/red] Failed", highlight=False)
+
+            if self.current_phase == phase_id:
+                self.current_phase = None
+
+    def skip_phase(self, phase_id: str) -> None:
+        """Mark a phase as skipped."""
+        if phase_id in self.phases:
+            phase = self.phases[phase_id]
+            phase.status = PhaseStatus.SKIPPED
+            self.console.print(f"[dim]○ {phase.description} (skipped)[/dim]", highlight=False)
 
 
 def run_script(script_name: str, script_dir: Path, env: dict) -> bool:
@@ -298,6 +360,20 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    # Initialize UI
+    ui = SimpleBuildUI()
+    console = Console()
+
+    # Add all phases upfront
+    ui.add_phase("phase1", "Phase 1: Preparing working directories")
+    ui.add_phase("phase2", "Phase 2: Copying source files")
+    ui.add_phase("phase3", "Phase 3: Installing dependencies")
+    ui.add_phase("phase4", "Phase 4: Compiling packages")
+    ui.add_phase("phase5", "Phase 5: Generating rosdep list")
+    ui.add_phase("phase6", "Phase 6: Creating package list")
+    ui.add_phase("phase7", "Phase 7: Generating Debian metadata")
+    ui.add_phase("phase8", "Phase 8: Building Debian packages")
+
     # Resolve paths
     script_dir = Path(__file__).resolve().parent
     workspace_dir = Path(args.workspace).resolve()
@@ -306,12 +382,16 @@ def main() -> int:
     # Get ROS distribution and install prefix from environment
     ros_distro = os.environ.get("ROS_DISTRO", "humble")
     ros_install_prefix = os.environ.get("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
-
-    print_phase("Build Configuration")
-    print(f"  ROS Distribution: {ros_distro}")
-    print(f"  Install Prefix: {ros_install_prefix}")
     # Optional package suffix (e.g., "1.5.0" for ros-humble-pkg-1.5.0)
     ros_package_suffix = os.environ.get("ROS_PACKAGE_SUFFIX", "")
+
+    # Print config
+    console.print("\n[bold]Build Configuration[/bold]")
+    console.print(f"  ROS Distribution: {ros_distro}")
+    console.print(f"  Install Prefix: {ros_install_prefix}")
+    if ros_package_suffix:
+        console.print(f"  Package Suffix: {ros_package_suffix}")
+    console.print()
 
     # Set up directory paths
     top_work_dir = output_dir
@@ -377,31 +457,39 @@ def main() -> int:
     last_failing_phase: str | None = None
 
     # Phase 1: Prepare working directories
-    print_phase("Phase 1: Preparing working directories")
+    ui.start_phase("phase1")
     if not run_script("prepare.sh", script_dir, env):
-        print("error: Phase 1 failed", file=sys.stderr)
+        ui.complete_phase("phase1", success=False)
         last_failing_phase = "Phase 1: Preparing working directories"
+    else:
+        ui.complete_phase("phase1", success=True)
 
     # Phase 2: Copy source files
     if last_failing_phase is None:
-        print_phase("Phase 2: Copying source files")
+        ui.start_phase("phase2")
         if not run_script("copy-src.sh", script_dir, env):
-            print("error: Phase 2 failed", file=sys.stderr)
+            ui.complete_phase("phase2", success=False)
             last_failing_phase = "Phase 2: Copying source files"
+        else:
+            ui.complete_phase("phase2", success=True)
 
     # Phase 3: Install dependencies
     if last_failing_phase is None:
-        print_phase("Phase 3: Installing dependencies")
+        ui.start_phase("phase3")
         if not run_script("install-deps.sh", script_dir, env):
-            print("error: Phase 3 failed", file=sys.stderr)
+            ui.complete_phase("phase3", success=False)
             last_failing_phase = "Phase 3: Installing dependencies"
+        else:
+            ui.complete_phase("phase3", success=True)
 
     # Phase 4: Compile packages
     if last_failing_phase is None:
-        print_phase("Phase 4: Compiling packages")
+        ui.start_phase("phase4")
         if not run_script("build-src.sh", script_dir, env):
-            print("error: Phase 4 failed", file=sys.stderr)
+            ui.complete_phase("phase4", success=False)
             last_failing_phase = "Phase 4: Compiling packages"
+        else:
+            ui.complete_phase("phase4", success=True)
 
     # Source the setup.bash for subsequent phases
     if last_failing_phase is None:
@@ -421,38 +509,46 @@ def main() -> int:
 
     # Phase 5: Generate rosdep list
     if last_failing_phase is None:
-        print_phase("Phase 5: Generating rosdep list")
+        ui.start_phase("phase5")
         if not run_script("create-rosdep-list.sh", script_dir, env):
-            print("error: Phase 5 failed", file=sys.stderr)
+            ui.complete_phase("phase5", success=False)
             last_failing_phase = "Phase 5: Generating rosdep list"
+        else:
+            ui.complete_phase("phase5", success=True)
 
     # Phase 6: Create package list
     if last_failing_phase is None:
-        print_phase("Phase 6: Creating package list")
+        ui.start_phase("phase6")
         if not run_script("create-package-list.sh", script_dir, env):
-            print("error: Phase 6 failed", file=sys.stderr)
+            ui.complete_phase("phase6", success=False)
             last_failing_phase = "Phase 6: Creating package list"
+        else:
+            ui.complete_phase("phase6", success=True)
 
     # Phase 7: Generate Debian metadata
     if last_failing_phase is None:
         if not args.skip_gen_debian:
-            print_phase("Phase 7: Generating Debian metadata")
+            ui.start_phase("phase7")
             if not run_python_script("generate_debian_dir.py", script_dir, env):
-                print("error: Phase 7 failed", file=sys.stderr)
+                ui.complete_phase("phase7", success=False)
                 last_failing_phase = "Phase 7: Generating Debian metadata"
+            else:
+                ui.complete_phase("phase7", success=True)
         else:
-            print_phase("Phase 7: Skipping Debian metadata generation (--skip-gen-debian)")
+            ui.skip_phase("phase7")
 
     # Phase 8: Build Debian packages
     if last_failing_phase is None:
         if not args.skip_build_deb:
-            print_phase("Phase 8: Building Debian packages")
+            ui.start_phase("phase8")
             if not run_python_script("build_deb.py", script_dir, env):
                 # build_deb.py may return non-zero if some packages fail
                 # but we still want to show the summary (packages may have partial success)
-                pass
+                ui.complete_phase("phase8", success=True)  # Partial success is still "done"
+            else:
+                ui.complete_phase("phase8", success=True)
         else:
-            print_phase("Phase 8: Skipping Debian package builds (--skip-build-deb)")
+            ui.skip_phase("phase8")
 
     if last_failing_phase is None:
         print(f"Packages are in: {release_dir}")
