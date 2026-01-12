@@ -1,0 +1,30 @@
+version: 1
+
+# Workspace containing ROS 2 packages
+workspace_dir: ./source
+
+# Docker configuration
+docker:
+  dockerfile: ./Dockerfile
+  image_name: colcon2deb-custom-example
+
+# Output configuration
+output:
+  directory: ./build
+
+# Package configurations
+packages:
+  directory: ./debian-overrides
+
+# Build options
+build:
+  ros_distro: humble
+  skip_tests: true
+
+  # Custom installation prefix (default: /opt/ros/{ros_distro})
+  # Packages will be installed to this directory
+  install_prefix: /opt/myproject
+
+  # Package name suffix - appended to package names
+  # Example: ros-humble-mypackage becomes ros-humble-mypackage-1.0.0
+  package_suffix: "1.0.0"

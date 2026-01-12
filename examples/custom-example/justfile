@@ -1,0 +1,21 @@
+# Custom example build automation
+# Demonstrates package suffix and custom install prefix
+
+# Project root (two levels up)
+project_root := `cd ../.. && pwd`
+
+# Show available recipes
+default:
+    @just --list
+
+# Build Debian packages
+build:
+    @{{project_root}}/.venv/bin/colcon2deb --workspace source --config config.yaml
+
+# Clean build artifacts
+clean:
+    rm -rf build/ debian-overrides/*/
+
+# List packages in workspace
+list:
+    @find source/src -name "package.xml" -exec dirname {} \; | xargs -n1 basename

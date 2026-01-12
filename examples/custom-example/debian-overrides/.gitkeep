@@ -1,0 +1,3 @@
+# This directory holds per-package debian/ overrides.
+# Generated debian directories are cached here automatically.
+# To customize a package's debian files, edit the files in <package>/debian/
