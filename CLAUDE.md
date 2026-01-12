@@ -47,20 +47,16 @@ colcon2deb --help
 ### Testing and Linting
 ```bash
 # Run tests
-uv run pytest tests/ -v
+just test
 
-# Run with coverage
-uv run pytest tests/ --cov
-
-# Lint check
-uv run ruff check colcon2deb/
-
-# Format check
-uv run ruff format --check colcon2deb/
+# Run lint and format checks
+just lint
 
 # Auto-fix lint issues
-uv run ruff check --fix colcon2deb/
-uv run ruff format colcon2deb/
+just lint-fix
+
+# Format code
+just format
 ```
 
 ### Version Management
