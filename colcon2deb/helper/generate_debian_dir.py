@@ -230,6 +230,11 @@ def main() -> int:
     # Get all package names for peer_packages (to skip rosdep resolution for workspace packages)
     all_package_names = [pkg_name for pkg_name, _ in packages]
 
+    # Add ROS 2 build type dependencies that should be skipped during rosdep resolution
+    # These are buildtool dependencies that aren't rosdep keys
+    ros2_build_types = ["ament_cmake", "ament_python", "ament_cmake_python", "cmake", "catkin"]
+    all_package_names.extend(ros2_build_types)
+
     # Use half the CPU cores for I/O-heavy operations
     njobs = max(1, (os.cpu_count() or 1 + 1) // 2)
 
