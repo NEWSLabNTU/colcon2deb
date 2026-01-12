@@ -6,6 +6,7 @@ import atexit
 import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -16,6 +17,9 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+# Regex to strip ANSI escape codes
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 
 import yaml
 
@@ -255,7 +259,9 @@ def run_container_with_tui(docker_cmd, image_name, output_dir):
         # Read container output and add to log panel
         with ui.live_context():
             for line in process.stdout:
-                ui.update_log(line.rstrip())
+                # Strip ANSI escape codes before displaying
+                clean_line = _ANSI_ESCAPE_RE.sub("", line.rstrip())
+                ui.update_log(clean_line)
                 ui.refresh()
 
             process.wait()
