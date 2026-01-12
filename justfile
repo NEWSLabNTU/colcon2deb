@@ -67,6 +67,19 @@ build-example example:
 test:
     uv run pytest tests/ -v
 
+# Run lint and format checks
+lint:
+    uv run ruff check colcon2deb/
+    uv run ruff format --check colcon2deb/
+
+# Auto-fix lint issues
+lint-fix:
+    uv run ruff check --fix colcon2deb/
+
+# Format code
+format:
+    uv run ruff format colcon2deb/
+
 # Clean up build artifacts
 clean:
     rm -rf dist/
