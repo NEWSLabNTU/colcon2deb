@@ -1,7 +1,7 @@
 try:
     from importlib.metadata import PackageNotFoundError, version
     try:
-        __version__ = version("bloom")
+        __version__ = version("rosdeb-bloom")
     except PackageNotFoundError:
         __version__ = 'unset'
 except ImportError:
