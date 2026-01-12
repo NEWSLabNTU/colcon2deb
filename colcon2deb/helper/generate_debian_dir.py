@@ -22,6 +22,7 @@ from typing import Literal
 
 # Import rosdeb_bloom library (pip installed from /rosdeb-bloom in container)
 from rosdeb_bloom.api import generate_debian
+from rosdeb_bloom.logging import disable_ANSI_colors
 
 
 class DebianDirStatus(Enum):
@@ -140,6 +141,8 @@ def copy_or_create_debian_dir(
 
         else:
             # Generate using rosdeb_bloom library
+            # Disable ANSI colors in child process for clean output
+            disable_ANSI_colors()
 
             # Ensure ~/.config exists for bloom
             home_config = Path.home() / ".config"
@@ -211,6 +214,9 @@ def copy_or_create_debian_dir(
 
 def main() -> int:
     """Main entry point."""
+    # Disable ANSI colors for clean TUI output
+    disable_ANSI_colors()
+
     # Get configuration from environment
     colcon_work_dir = get_env_path("colcon_work_dir")
     config_dir = get_env_path("config_dir")
