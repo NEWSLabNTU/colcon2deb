@@ -51,6 +51,20 @@ class Phase:
     description: str
     status: PhaseStatus = PhaseStatus.PENDING
     packages: list[Package] = field(default_factory=list)
+    start_time: float | None = None
+    end_time: float | None = None
+
+    def elapsed_str(self) -> str | None:
+        """Get elapsed time as a formatted string."""
+        if self.start_time is None:
+            return None
+        end = self.end_time if self.end_time else time.time()
+        elapsed = end - self.start_time
+        if elapsed < 60:
+            return f"{elapsed:.1f}s"
+        minutes = int(elapsed // 60)
+        seconds = elapsed % 60
+        return f"{minutes}m {seconds:.0f}s"
 
 
 @dataclass
@@ -93,6 +107,7 @@ class BuildUI:
         """Mark a phase as running and optionally start tailing a log file."""
         if phase_id in self.phases:
             self.phases[phase_id].status = PhaseStatus.RUNNING
+            self.phases[phase_id].start_time = time.time()
             self.current_phase = phase_id
 
         # Stop any existing log thread
@@ -111,6 +126,7 @@ class BuildUI:
             self.phases[phase_id].status = (
                 PhaseStatus.COMPLETED if success else PhaseStatus.FAILED
             )
+            self.phases[phase_id].end_time = time.time()
             if self.current_phase == phase_id:
                 self.current_phase = None
 
@@ -120,6 +136,7 @@ class BuildUI:
         """Mark a phase as skipped."""
         if phase_id in self.phases:
             self.phases[phase_id].status = PhaseStatus.SKIPPED
+            self.phases[phase_id].end_time = time.time()
 
     def add_package(self, phase_id: str, package: str) -> None:
         """Add a package sub-item to a phase."""
@@ -202,16 +219,20 @@ class BuildUI:
             text.append(indicator)
             text.append(phase.description)
 
-            # Add status suffix for non-pending states
+            # Add elapsed time and status suffix
+            elapsed = phase.elapsed_str()
             if phase.status == PhaseStatus.RUNNING:
-                text.append(" ", style="dim")
-                text.append("(running)", style="blue dim")
+                if elapsed:
+                    text.append(f" [{elapsed}]", style="blue dim")
+            elif phase.status == PhaseStatus.COMPLETED:
+                if elapsed:
+                    text.append(f" [{elapsed}]", style="dim")
             elif phase.status == PhaseStatus.SKIPPED:
-                text.append(" ", style="dim")
-                text.append("(skipped)", style="dim")
+                text.append(" (skipped)", style="dim")
             elif phase.status == PhaseStatus.FAILED:
-                text.append(" ", style="dim")
-                text.append("(failed)", style="red dim")
+                if elapsed:
+                    text.append(f" [{elapsed}]", style="red dim")
+                text.append(" (failed)", style="red dim")
 
             text.append("\n")
 

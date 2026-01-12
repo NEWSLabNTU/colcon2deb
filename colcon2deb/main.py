@@ -215,10 +215,20 @@ def run_container_with_tui(docker_cmd, image_name, output_dir):
                     pass
             time.sleep(0.1)
 
+    def periodic_refresh() -> None:
+        """Background thread to periodically refresh UI for elapsed time updates."""
+        while not stop_event.is_set():
+            ui.refresh()
+            time.sleep(0.25)  # Refresh 4 times per second
+
     try:
         # Start event tailer thread
         tailer = threading.Thread(target=tail_events, daemon=True)
         tailer.start()
+
+        # Start periodic refresh thread for elapsed time updates
+        refresher = threading.Thread(target=periodic_refresh, daemon=True)
+        refresher.start()
 
         # Start the container with stdout/stderr piped
         process = subprocess.Popen(
@@ -268,6 +278,7 @@ def run_container_with_tui(docker_cmd, image_name, output_dir):
 
         stop_event.set()
         tailer.join(timeout=1)
+        refresher.join(timeout=1)
 
         return process.returncode
 
