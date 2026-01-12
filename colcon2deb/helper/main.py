@@ -21,96 +21,71 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from dataclasses import dataclass
-from enum import Enum
-
-from rich.console import Console
-
 import events
-
-
-class PhaseStatus(Enum):
-    """Status of a build phase."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-
-
-@dataclass
-class Phase:
-    """Represents a build phase."""
-
-    name: str
-    description: str
-    status: PhaseStatus = PhaseStatus.PENDING
 
 
 class SimpleBuildUI:
     """Simple UI for build progress display."""
 
     def __init__(self) -> None:
-        self.console = Console()
-        self.phases: dict[str, Phase] = {}
-        self.phase_order: list[str] = []
+        self.phases: dict[str, str] = {}  # phase_id -> description
         self.current_phase: str | None = None
 
     def add_phase(self, phase_id: str, description: str) -> None:
         """Add a new phase to track."""
-        self.phases[phase_id] = Phase(name=phase_id, description=description)
-        self.phase_order.append(phase_id)
+        self.phases[phase_id] = description
 
-    def start_phase(self, phase_id: str, log_file: Path | None = None) -> None:
+    def start_phase(self, phase_id: str) -> None:
         """Mark a phase as running."""
         if phase_id in self.phases:
-            self.phases[phase_id].status = PhaseStatus.RUNNING
             self.current_phase = phase_id
-            phase = self.phases[phase_id]
-            self.console.print(f"[blue]●[/blue] {phase.description}...", highlight=False)
+            print(f"● {self.phases[phase_id]}...")
 
     def complete_phase(self, phase_id: str, success: bool = True) -> None:
         """Mark a phase as completed or failed."""
         if phase_id in self.phases:
-            phase = self.phases[phase_id]
             if success:
-                phase.status = PhaseStatus.COMPLETED
-                self.console.print("  [green]✓[/green] Done", highlight=False)
+                print("  ✓ Done")
             else:
-                phase.status = PhaseStatus.FAILED
-                self.console.print("  [red]✗[/red] Failed", highlight=False)
-
+                print("  ✗ Failed")
             if self.current_phase == phase_id:
                 self.current_phase = None
 
     def skip_phase(self, phase_id: str) -> None:
         """Mark a phase as skipped."""
         if phase_id in self.phases:
-            phase = self.phases[phase_id]
-            phase.status = PhaseStatus.SKIPPED
-            self.console.print(f"[dim]○ {phase.description} (skipped)[/dim]", highlight=False)
+            print(f"○ {self.phases[phase_id]} (skipped)")
 
 
 def run_script(script_name: str, script_dir: Path, env: dict) -> bool:
     """Run a shell script from the helper directory."""
     script_path = script_dir / script_name
+    # Explicitly inherit stdout/stderr for proper TUI display
     result = subprocess.run(
         ["bash", str(script_path)],
         cwd=script_dir,
         env=env,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
     )
+    sys.stdout.flush()
+    sys.stderr.flush()
     return result.returncode == 0
 
 
 def run_python_script(script_name: str, script_dir: Path, env: dict) -> bool:
     """Run a Python script from the helper directory."""
     script_path = script_dir / script_name
+    # Explicitly inherit stdout/stderr for proper TUI display
     result = subprocess.run(
         [sys.executable, str(script_path)],
         cwd=script_dir,
         env=env,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
     )
+    sys.stdout.flush()
+    sys.stderr.flush()
     return result.returncode == 0
 
 
@@ -283,7 +258,6 @@ def main() -> int:
 
     # Initialize UI
     ui = SimpleBuildUI()
-    console = Console()
 
     # Add all phases upfront
     ui.add_phase("phase1", "Phase 1: Preparing working directories")
