@@ -465,10 +465,7 @@ def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None,
     if log_dir:
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
-        from datetime import datetime
-
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        log_file = log_dir / f"{timestamp}_docker_build.log"
+        log_file = log_dir / "docker_build.log"
 
     run_command(cmd, log_file=log_file, stream_output=True)
     return image_name
@@ -586,7 +583,7 @@ def main():
 
     # Create output directory and timestamped log directory
     output_dir.mkdir(parents=True, exist_ok=True)
-    log_base_dir = output_dir / "log"
+    log_base_dir = output_dir / "logs"
     log_base_dir.mkdir(parents=True, exist_ok=True)
 
     # Create timestamped log directory
@@ -595,6 +592,14 @@ def main():
     log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_dir = log_base_dir / log_timestamp
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create log subdirectories
+    log_logs_dir = log_dir / "logs"
+    log_reports_dir = log_dir / "reports"
+    log_scripts_dir = log_dir / "scripts"
+    log_logs_dir.mkdir(parents=True, exist_ok=True)
+    log_reports_dir.mkdir(parents=True, exist_ok=True)
+    log_scripts_dir.mkdir(parents=True, exist_ok=True)
 
     # Create/update 'latest' symlink
     latest_link = log_base_dir / "latest"
@@ -634,7 +639,7 @@ def main():
                 temp_dockerfile,
                 docker_config.get("image_name", "colcon2deb_builder"),
                 build_context=temp_context,
-                log_dir=log_dir,
+                log_dir=log_logs_dir,
                 platform=docker_config.get("platform"),
             )
         else:
@@ -656,7 +661,7 @@ def main():
                 dockerfile_path,
                 docker_config.get("image_name", "colcon2deb_builder"),
                 build_context=build_context,
-                log_dir=log_dir,
+                log_dir=log_logs_dir,
                 platform=docker_config.get("platform"),
             )
     else:
@@ -765,7 +770,7 @@ def main():
         f"--uid={uid}",
         f"--gid={gid}",
         "--output=/output",
-        f"--log-dir=/output/log/{log_timestamp}",
+        f"--log-dir=/output/logs/{log_timestamp}",
     ])
 
     # Add skip options if specified

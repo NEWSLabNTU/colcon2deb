@@ -4,9 +4,12 @@ mkdir -p "$top_work_dir"
 mkdir -p "$colcon_work_dir"
 mkdir -p "$release_dir"
 mkdir -p "$log_dir"
+mkdir -p "$log_logs_dir"
+mkdir -p "$log_reports_dir"
+mkdir -p "$log_scripts_dir"
 mkdir -p "$pkg_build_dir"
 
-# Now safe to create/truncate log files
+# Now safe to create/truncate report files
 truncate -s 0 "$deb_pkgs_file" 2>/dev/null || true
 truncate -s 0 "$successful_pkgs_file" 2>/dev/null || true
 truncate -s 0 "$failed_pkgs_file" 2>/dev/null || true

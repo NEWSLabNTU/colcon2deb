@@ -132,7 +132,7 @@ def count_files(directory: Path, pattern: str) -> int:
 
 
 def write_summary_file(
-    log_dir: Path,
+    log_reports_dir: Path,
     last_failing_phase: str | None,
     successful_pkgs: int,
     failed_pkgs: int,
@@ -140,8 +140,8 @@ def write_summary_file(
     total_pkgs: int,
     output_debs: int,
 ) -> None:
-    """Write summary.txt file to log directory."""
-    summary_file = log_dir / "summary.txt"
+    """Write summary.txt file to reports directory."""
+    summary_file = log_reports_dir / "summary.txt"
 
     with open(summary_file, "w") as f:
         f.write("=" * 50 + "\n")
@@ -187,10 +187,7 @@ def print_summary(
     failed_pkgs_file: Path,
     skipped_pkgs_file: Path,
     release_dir: Path,
-    pkg_build_dir: Path,
-    top_work_dir: Path,
-    log_dir: Path,
-    workspace_dir: Path,
+    log_reports_dir: Path,
     last_failing_phase: str | None = None,
 ) -> int:
     """Print the build summary, write summary.txt, and return exit code."""
@@ -203,7 +200,7 @@ def print_summary(
 
     # Write summary.txt file
     write_summary_file(
-        log_dir=log_dir,
+        log_reports_dir=log_reports_dir,
         last_failing_phase=last_failing_phase,
         successful_pkgs=successful_pkgs,
         failed_pkgs=failed_pkgs,
@@ -315,10 +312,10 @@ def main() -> int:
 
     # Set up directory paths
     top_work_dir = output_dir
-    colcon_work_dir = top_work_dir / "sources"
+    colcon_work_dir = top_work_dir / "workspace"
     config_dir = Path("/config")
-    release_dir = top_work_dir / "dist"
-    pkg_build_dir = top_work_dir / "build"
+    release_dir = top_work_dir / "debs"
+    pkg_build_dir = top_work_dir / "packaging"
     check_dir = release_dir
 
     # Set up log directory
@@ -326,7 +323,7 @@ def main() -> int:
         log_dir = Path(args.log_dir)
     else:
         # Create timestamped log directory for standalone usage
-        log_base_dir = top_work_dir / "log"
+        log_base_dir = top_work_dir / "logs"
         log_base_dir.mkdir(parents=True, exist_ok=True)
         log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         log_dir = log_base_dir / log_timestamp
@@ -337,11 +334,19 @@ def main() -> int:
             latest_link.unlink()
         latest_link.symlink_to(log_timestamp)
 
-    # Log file paths (no number prefixes for outcome files)
-    deb_pkgs_file = log_dir / "deb_pkgs.txt"
-    successful_pkgs_file = log_dir / "successful_pkgs.txt"
-    failed_pkgs_file = log_dir / "failed_pkgs.txt"
-    skipped_pkgs_file = log_dir / "skipped_pkgs.txt"
+    # Create log subdirectories
+    log_logs_dir = log_dir / "logs"
+    log_reports_dir = log_dir / "reports"
+    log_scripts_dir = log_dir / "scripts"
+    log_logs_dir.mkdir(parents=True, exist_ok=True)
+    log_reports_dir.mkdir(parents=True, exist_ok=True)
+    log_scripts_dir.mkdir(parents=True, exist_ok=True)
+
+    # Report file paths (in reports/ subdirectory)
+    deb_pkgs_file = log_reports_dir / "packages.txt"
+    successful_pkgs_file = log_reports_dir / "successful.txt"
+    failed_pkgs_file = log_reports_dir / "failed.txt"
+    skipped_pkgs_file = log_reports_dir / "skipped.txt"
 
     # Prepare environment for shell scripts
     env = os.environ.copy()
@@ -357,6 +362,9 @@ def main() -> int:
             "pkg_build_dir": str(pkg_build_dir),
             "check_dir": str(check_dir),
             "log_dir": str(log_dir),
+            "log_logs_dir": str(log_logs_dir),
+            "log_reports_dir": str(log_reports_dir),
+            "log_scripts_dir": str(log_scripts_dir),
             "deb_pkgs_file": str(deb_pkgs_file),
             "successful_pkgs_file": str(successful_pkgs_file),
             "failed_pkgs_file": str(failed_pkgs_file),
@@ -506,10 +514,7 @@ def main() -> int:
         failed_pkgs_file=failed_pkgs_file,
         skipped_pkgs_file=skipped_pkgs_file,
         release_dir=release_dir,
-        pkg_build_dir=pkg_build_dir,
-        top_work_dir=top_work_dir,
-        log_dir=log_dir,
-        workspace_dir=workspace_dir,
+        log_reports_dir=log_reports_dir,
         last_failing_phase=last_failing_phase,
     )
 

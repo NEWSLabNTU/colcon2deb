@@ -3,9 +3,7 @@ cd "$colcon_work_dir"
 # Note: ROS environment should already be set up by /colcon2deb-setup.sh in entry.sh
 
 if [ "$colcon_build" = y ]; then
-    # Use datetime format for log file
-    colcon_ts=$(date '+%Y-%m-%d_%H-%M-%S')
-    colcon_log="$log_dir/${colcon_ts}_colcon_build.log"
+    colcon_log="$log_logs_dir/phase4_colcon_build.log"
 
     # Build cmake args: always include Release build type
     # Users can add custom args via COLCON2DEB_CMAKE_ARGS environment variable
