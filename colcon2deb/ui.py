@@ -18,7 +18,11 @@ from pathlib import Path
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
+from rich.spinner import Spinner
 from rich.text import Text
+
+# Spinner frames for running state
+SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
 class PhaseStatus(Enum):
@@ -32,12 +36,21 @@ class PhaseStatus(Enum):
 
 
 @dataclass
+class Package:
+    """Represents a package being processed within a phase."""
+
+    name: str
+    status: PhaseStatus = PhaseStatus.RUNNING
+
+
+@dataclass
 class Phase:
     """Represents a build phase."""
 
     name: str
     description: str
     status: PhaseStatus = PhaseStatus.PENDING
+    packages: list[Package] = field(default_factory=list)
 
 
 @dataclass
@@ -63,12 +76,13 @@ class BuildUI:
     phases: dict[str, Phase] = field(default_factory=dict)
     phase_order: list[str] = field(default_factory=list)
     current_phase: str | None = None
-    log_lines: deque[str] = field(default_factory=lambda: deque(maxlen=8))
+    log_lines: deque[str] = field(default_factory=lambda: deque(maxlen=15))
     log_file: Path | None = None
     _live: Live | None = None
     _log_thread: threading.Thread | None = None
     _stop_log_thread: bool = False
     _log_position: int = 0
+    _spinner_frame: int = 0
 
     def add_phase(self, phase_id: str, description: str) -> None:
         """Add a new phase to track."""
@@ -106,6 +120,26 @@ class BuildUI:
         """Mark a phase as skipped."""
         if phase_id in self.phases:
             self.phases[phase_id].status = PhaseStatus.SKIPPED
+
+    def add_package(self, phase_id: str, package: str) -> None:
+        """Add a package sub-item to a phase."""
+        if phase_id in self.phases:
+            phase = self.phases[phase_id]
+            # Check if package already exists
+            for pkg in phase.packages:
+                if pkg.name == package:
+                    pkg.status = PhaseStatus.RUNNING
+                    return
+            phase.packages.append(Package(name=package, status=PhaseStatus.RUNNING))
+
+    def complete_package(self, phase_id: str, package: str, success: bool = True) -> None:
+        """Mark a package as complete."""
+        if phase_id in self.phases:
+            phase = self.phases[phase_id]
+            for pkg in phase.packages:
+                if pkg.name == package:
+                    pkg.status = PhaseStatus.COMPLETED if success else PhaseStatus.FAILED
+                    return
 
     def update_log(self, line: str) -> None:
         """Add a line to the log display."""
@@ -157,8 +191,9 @@ class BuildUI:
             elif phase.status == PhaseStatus.FAILED:
                 indicator = Text("✗ ", style="red bold")
             elif phase.status == PhaseStatus.RUNNING:
-                # Use a simple character for running (spinner handled separately)
-                indicator = Text("● ", style="blue bold")
+                # Use animated spinner for running phase
+                spinner_char = SPINNER_FRAMES[self._spinner_frame % len(SPINNER_FRAMES)]
+                indicator = Text(f"{spinner_char} ", style="blue bold")
             elif phase.status == PhaseStatus.SKIPPED:
                 indicator = Text("○ ", style="dim")
             else:  # PENDING
@@ -179,6 +214,21 @@ class BuildUI:
                 text.append("(failed)", style="red dim")
 
             text.append("\n")
+
+            # Render packages under this phase (if any)
+            for pkg in phase.packages:
+                text.append("    ")  # Indent
+                if pkg.status == PhaseStatus.COMPLETED:
+                    text.append("✓ ", style="green")
+                elif pkg.status == PhaseStatus.FAILED:
+                    text.append("✗ ", style="red")
+                elif pkg.status == PhaseStatus.RUNNING:
+                    spinner_char = SPINNER_FRAMES[self._spinner_frame % len(SPINNER_FRAMES)]
+                    text.append(f"{spinner_char} ", style="blue")
+                else:
+                    text.append("○ ", style="dim")
+                text.append(pkg.name, style="dim" if pkg.status == PhaseStatus.COMPLETED else None)
+                text.append("\n")
 
         return text
 
@@ -231,6 +281,7 @@ class BuildUI:
 
     def refresh(self) -> None:
         """Manually refresh the display."""
+        self._spinner_frame += 1
         if self._live:
             self._live.update(self._render())
 

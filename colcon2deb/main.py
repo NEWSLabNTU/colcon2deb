@@ -4,6 +4,7 @@
 import argparse
 import atexit
 import hashlib
+import json
 import os
 import shutil
 import signal
@@ -17,6 +18,9 @@ import urllib.request
 from pathlib import Path
 
 import yaml
+
+from .events import EVENT_FILE
+from .ui import BuildUI
 
 # Global state for signal handling
 _container_id = None
@@ -129,30 +133,206 @@ def run_container_with_signal_handling(docker_cmd, image_name):
         _container_id = None
 
 
-def run_command(cmd, check=True, log_file=None, show_output=False):
+def run_container_with_tui(docker_cmd, image_name, output_dir):
+    """Run a Docker container with TUI display.
+
+    Args:
+        docker_cmd: Docker command to run
+        image_name: Name of the Docker image (for finding container ID)
+        output_dir: Output directory where events file will be written
+
+    Returns:
+        Container exit code
+    """
+    global _container_id, _interrupt_count
+
+    # Reset interrupt count
+    _interrupt_count = 0
+
+    # Set up signal handler
+    original_handler = signal.signal(signal.SIGINT, signal_handler)
+
+    # Initialize UI
+    ui = BuildUI()
+    ui.add_phase("phase1", "Phase 1: Preparing working directories")
+    ui.add_phase("phase2", "Phase 2: Copying source files")
+    ui.add_phase("phase3", "Phase 3: Installing dependencies")
+    ui.add_phase("phase4", "Phase 4: Compiling packages")
+    ui.add_phase("phase5", "Phase 5: Generating rosdep list")
+    ui.add_phase("phase6", "Phase 6: Creating package list")
+    ui.add_phase("phase7", "Phase 7: Generating Debian metadata")
+    ui.add_phase("phase8", "Phase 8: Building Debian packages")
+
+    event_file = output_dir / EVENT_FILE
+    stop_event = threading.Event()
+
+    # Clear events file from previous run
+    if event_file.exists():
+        event_file.unlink()
+
+    def handle_event(event: dict) -> None:
+        """Process an event and update UI."""
+        etype = event.get("type", "")
+        if etype == "phase_start":
+            phase_id = f"phase{event.get('phase', 0)}"
+            ui.start_phase(phase_id)
+        elif etype == "phase_complete":
+            phase_id = f"phase{event.get('phase', 0)}"
+            ui.complete_phase(phase_id, event.get("success", True))
+        elif etype == "phase_skip":
+            phase_id = f"phase{event.get('phase', 0)}"
+            ui.skip_phase(phase_id)
+        elif etype == "package_start":
+            phase_id = f"phase{event.get('phase', 0)}"
+            ui.add_package(phase_id, event.get("package", ""))
+        elif etype == "package_complete":
+            phase_id = f"phase{event.get('phase', 0)}"
+            ui.complete_package(phase_id, event.get("package", ""), event.get("success", True))
+
+    def tail_events() -> None:
+        """Background thread to tail event file and update UI."""
+        position = 0
+        while not stop_event.is_set():
+            if event_file.exists():
+                try:
+                    with open(event_file) as f:
+                        f.seek(position)
+                        for line in f:
+                            line = line.strip()
+                            if line:
+                                try:
+                                    event = json.loads(line)
+                                    handle_event(event)
+                                    ui.refresh()
+                                except json.JSONDecodeError:
+                                    pass
+                        position = f.tell()
+                except OSError:
+                    pass
+            time.sleep(0.1)
+
+    try:
+        # Start event tailer thread
+        tailer = threading.Thread(target=tail_events, daemon=True)
+        tailer.start()
+
+        # Start the container with stdout/stderr piped
+        process = subprocess.Popen(
+            docker_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,  # Line buffered
+        )
+
+        # Try to get container ID (with retries)
+        for _ in range(10):
+            time.sleep(0.5)
+            try:
+                result = subprocess.run(
+                    [
+                        "docker",
+                        "ps",
+                        "-q",
+                        "--filter",
+                        f"ancestor={image_name}",
+                        "--filter",
+                        "status=running",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    _container_id = result.stdout.strip().split("\n")[0]
+                    break
+            except Exception:
+                pass
+
+            if process.poll() is not None:
+                break
+
+        # Read container output and add to log panel
+        with ui.live_context():
+            for line in process.stdout:
+                ui.update_log(line.rstrip())
+                ui.refresh()
+
+            process.wait()
+
+        stop_event.set()
+        tailer.join(timeout=1)
+
+        return process.returncode
+
+    except Exception as e:
+        print(f"Error running container: {e}", file=sys.stderr)
+        return 1
+    finally:
+        stop_event.set()
+        signal.signal(signal.SIGINT, original_handler)
+        _container_id = None
+
+
+def run_command(cmd, check=True, log_file=None, stream_output=False):
     """Run a shell command and return the result.
 
     Args:
         cmd: Command to run as a list
         check: Raise exception on non-zero exit code
-        log_file: Path to log file for output (if None, output goes to terminal)
-        show_output: If True, show output even when log_file is set
+        log_file: Path to log file for output
+        stream_output: If True, stream output to terminal in real-time
     """
-    if not log_file:
-        # No log file - show everything as before
-        print(f"Running: {' '.join(cmd)}")
-        result = subprocess.run(cmd, check=check, capture_output=True, text=True)
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(result.stderr, file=sys.stderr)
-        return result
-    else:
-        # Log to file, optionally show progress
-        if show_output:
-            print(f"Running: {' '.join(cmd)}")
-            print(f"  Output logged to: {log_file}")
+    if stream_output:
+        # Stream output in real-time while also logging
+        log_handle = open(log_file, "w") if log_file else None
+        try:
+            if log_handle:
+                log_handle.write(f"Command: {' '.join(cmd)}\n")
+                log_handle.write("=" * 80 + "\n\n")
 
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+
+            stdout_lines = []
+            for line in process.stdout:
+                line = line.rstrip()
+                stdout_lines.append(line)
+                # Filter and display Docker build progress
+                if line:
+                    print(f"  {line}")
+                if log_handle:
+                    log_handle.write(line + "\n")
+                    log_handle.flush()
+
+            process.wait()
+
+            if process.returncode != 0:
+                print(f"  ✗ Failed", file=sys.stderr)
+                if check:
+                    raise subprocess.CalledProcessError(
+                        process.returncode, cmd, "\n".join(stdout_lines), ""
+                    )
+            else:
+                print("  ✓ Done")
+
+            # Return a result-like object
+            class Result:
+                def __init__(self, returncode, stdout, stderr):
+                    self.returncode = returncode
+                    self.stdout = stdout
+                    self.stderr = stderr
+
+            return Result(process.returncode, "\n".join(stdout_lines), "")
+        finally:
+            if log_handle:
+                log_handle.close()
+    elif log_file:
         # Run without check so we can log output before raising exception
         result = subprocess.run(cmd, check=False, capture_output=True, text=True)
 
@@ -168,23 +348,27 @@ def run_command(cmd, check=True, log_file=None, show_output=False):
 
         # Show summary on error
         if result.returncode != 0:
-            print(f"✗ Command failed with exit code {result.returncode}", file=sys.stderr)
-            print(f"  See log: {log_file}", file=sys.stderr)
+            print(f"  ✗ Failed (see {log_file})", file=sys.stderr)
             if check:
                 raise subprocess.CalledProcessError(
                     result.returncode, cmd, result.stdout, result.stderr
                 )
-        elif show_output:
-            print("  ✓ Complete")
+        else:
+            print("  ✓ Done")
 
+        return result
+    else:
+        # No log file - show everything as before
+        result = subprocess.run(cmd, check=check, capture_output=True, text=True)
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
         return result
 
 
 def download_dockerfile(url, cache_dir=None):
     """Download Dockerfile from HTTP/HTTPS URL."""
-    print("\nDownloading Dockerfile from URL...")
-    print(f"  URL: {url}")
-
     # Create cache directory if specified
     if cache_dir:
         cache_dir = Path(cache_dir)
@@ -196,12 +380,9 @@ def download_dockerfile(url, cache_dir=None):
 
         # Check if cached file exists
         if cached_file.exists():
-            print("  ✓ Using cached Dockerfile")
-            print(f"  Cache location: {cached_file}")
             return cached_file
 
     try:
-        print("  Fetching from remote...")
         # Download the file
         request = urllib.request.Request(url, headers={"User-Agent": "colcon2deb/1.0"})
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -216,13 +397,9 @@ def download_dockerfile(url, cache_dir=None):
                 file=sys.stderr,
             )
 
-        print(f"  ✓ Downloaded {content_length} bytes")
-
         # Save to temporary file or cache
         if cache_dir and cached_file:
             cached_file.write_bytes(content)
-            print("  ✓ Cached for future use")
-            print(f"  Cache location: {cached_file}")
             return cached_file
         else:
             # Create temporary file
@@ -276,8 +453,6 @@ def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None,
     ])
 
     print(f"Building Docker image '{image_name}'...")
-    print(f"  Dockerfile: {dockerfile_path}")
-    print(f"  Build context: {build_context}")
 
     # Log docker build output to file if log_dir provided
     log_file = None
@@ -289,7 +464,7 @@ def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None,
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         log_file = log_dir / f"{timestamp}_docker_build.log"
 
-    run_command(cmd, log_file=log_file, show_output=True)
+    run_command(cmd, log_file=log_file, stream_output=True)
     return image_name
 
 
@@ -427,10 +602,6 @@ def main():
 
         # Check if it's a URL
         if dockerfile_value.startswith(("http://", "https://")):
-            print("\n" + "=" * 60)
-            print("Remote Dockerfile Configuration Detected")
-            print("=" * 60)
-
             # Download Dockerfile from URL
             # Use cache directory in user's home or temp
             cache_dir = Path.home() / ".cache" / "colcon2deb" / "dockerfiles"
@@ -547,11 +718,6 @@ def main():
     # Example: "1.5.0" results in packages like ros-humble-autoware-utils-1.5.0
     package_suffix = build_config.get("package_suffix")
 
-    print(f"\n  ROS Distribution: {ros_distro}")
-    print(f"  Install Prefix: {install_prefix}")
-    if package_suffix:
-        print(f"  Package Suffix: {package_suffix}")
-
     # rosdeb-bloom is the vendored debian generator library inside colcon2deb
     rosdeb_bloom_dir = script_dir / "rosdeb-bloom"
     if not rosdeb_bloom_dir.exists():
@@ -616,18 +782,9 @@ def main():
         docker_cmd.insert(4, "--runtime")
         docker_cmd.insert(5, "nvidia")
 
-    # Run the container
-    print("\nStarting container:")
-    print(f"  Workspace directory: {workspace_dir} -> /workspace")
-    print(f"  Packages config directory: {packages_dir} -> /config")
-    print(f"  Output directory: {output_dir} -> /output")
-    print(f"  Helper directory: {helper_dir} -> /helper")
-    print(f"  Using image: {image_name}")
-    print(f"\n  Build artifacts will be in: {output_dir}/")
-    print(f"  Final .deb packages will be in: {output_dir}/dist/")
-
-    # Run the container with signal handling
-    return_code = run_container_with_signal_handling(docker_cmd, image_name)
+    # Run the container with TUI display
+    print()  # Blank line before TUI
+    return_code = run_container_with_tui(docker_cmd, image_name, output_dir)
 
     if return_code != 0:
         print(f"\nContainer exited with code {return_code}", file=sys.stderr)

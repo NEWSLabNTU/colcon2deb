@@ -26,6 +26,8 @@ from enum import Enum
 
 from rich.console import Console
 
+import events
+
 
 class PhaseStatus(Enum):
     """Status of a build phase."""
@@ -210,103 +212,25 @@ def print_summary(
         output_debs=output_debs,
     )
 
-    # Continue with original summary display (using counts computed above)
-
+    # Print concise summary
     print("")
-    print("=" * 47)
-    print("           BUILD SUMMARY                      ")
-    print("=" * 47)
-
-    print("")
-    print("Package Statistics:")
-    print(f"  Total packages found:      {total_pkgs}")
-    print(f"  Previously built:          {skipped_pkgs} (skipped)")
-    print(f"  Successfully built:        {successful_pkgs} (new)")
-    print(f"  Failed to build:           {failed_pkgs}")
-    print(f"  Output .deb files:         {output_debs}")
-
-    # Calculate build success rate
-    attempted_pkgs = successful_pkgs + failed_pkgs
-    if attempted_pkgs > 0:
-        build_success_rate = successful_pkgs * 100 // attempted_pkgs
-        print(f"  Build success rate:        {build_success_rate}% (of {attempted_pkgs} attempted)")
-
-    # Calculate overall completion rate
-    completed_pkgs = successful_pkgs + skipped_pkgs
-    if total_pkgs > 0:
-        completion_rate = completed_pkgs * 100 // total_pkgs
-        print(f"  Overall completion:        {completion_rate}% ({completed_pkgs}/{total_pkgs})")
-
-    # Sanity check
-    accounted_pkgs = successful_pkgs + failed_pkgs + skipped_pkgs
-    if accounted_pkgs != total_pkgs:
-        unaccounted = total_pkgs - accounted_pkgs
-        print(f"  Unaccounted packages:      {unaccounted}")
-
-    print("")
-    print("Directories:")
-    print(f"  Output directory:   {top_work_dir}")
-    print(f"  Packages directory: {release_dir}")
-    print(f"  Log directory:      {log_dir}")
-
-    # Show failed packages if any
     if failed_pkgs > 0:
-        print("")
-        print("Failed Packages (first 10):")
+        print(f"Build completed with failures: {successful_pkgs}/{total_pkgs} succeeded, {failed_pkgs} failed")
+        # Show failed packages
         try:
             with open(failed_pkgs_file) as f:
                 for i, line in enumerate(f):
-                    if i >= 10:
+                    if i >= 5:
+                        print(f"  ... and {failed_pkgs - 5} more")
                         break
                     pkg = line.strip()
                     if pkg:
-                        print(f"  - {pkg}")
-                        err_file = pkg_build_dir / pkg / "build.err"
-                        if err_file.exists() and err_file.stat().st_size > 0:
-                            print(f"    -> Error log: {err_file}")
-                            # Print last 10 lines of error log for immediate visibility
-                            try:
-                                err_content = err_file.read_text().strip().split("\n")
-                                last_lines = err_content[-10:] if len(err_content) > 10 else err_content
-                                for line in last_lines:
-                                    print(f"       {line}")
-                            except Exception:
-                                pass
+                        print(f"  ✗ {pkg}")
         except FileNotFoundError:
             pass
-
-        if failed_pkgs > 10:
-            print(f"  ... and {failed_pkgs - 10} more")
-
-        print("")
-        print("To investigate failures:")
-        print("  1. Check individual error logs:")
-        print(f"     cat {pkg_build_dir}/PACKAGE_NAME/build.err")
-        print("  2. View complete failed list:")
-        print(f"     cat {failed_pkgs_file}")
-        print("  3. Run diagnostic tool:")
-        print(f"     ./check-build-results.py --workspace {workspace_dir} --output {top_work_dir}")
-
-    print("")
-    print("=" * 47)
-
-    # Exit with appropriate code
-    if failed_pkgs > 0:
-        print("Build completed with failures")
-        print("")
-        print("Next steps:")
-        print("  1. Check build logs for failed packages")
-        print("  2. Try installing successfully built packages:")
-        print("     ./install-partial.py --config CONFIG --mode safe")
         return 1
     else:
-        print("Build completed successfully!")
-        print("")
-        print("Next steps:")
-        print("  1. Install packages:")
-        print("     ./install-packages.py --config CONFIG")
-        print("  2. Test installation:")
-        print("     ./test-installation.sh --config CONFIG")
+        print(f"Build completed: {successful_pkgs} packages built, {output_debs} .deb files")
         return 0
 
 
@@ -379,19 +303,15 @@ def main() -> int:
     workspace_dir = Path(args.workspace).resolve()
     output_dir = Path(args.output).resolve()
 
+    # Initialize event emitter for TUI communication
+    events.init(output_dir)
+    events.build_start(total_phases=8)
+
     # Get ROS distribution and install prefix from environment
     ros_distro = os.environ.get("ROS_DISTRO", "humble")
     ros_install_prefix = os.environ.get("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
     # Optional package suffix (e.g., "1.5.0" for ros-humble-pkg-1.5.0)
     ros_package_suffix = os.environ.get("ROS_PACKAGE_SUFFIX", "")
-
-    # Print config
-    console.print("\n[bold]Build Configuration[/bold]")
-    console.print(f"  ROS Distribution: {ros_distro}")
-    console.print(f"  Install Prefix: {ros_install_prefix}")
-    if ros_package_suffix:
-        console.print(f"  Package Suffix: {ros_package_suffix}")
-    console.print()
 
     # Set up directory paths
     top_work_dir = output_dir
@@ -458,38 +378,50 @@ def main() -> int:
 
     # Phase 1: Prepare working directories
     ui.start_phase("phase1")
+    events.phase_start(1, "Preparing working directories")
     if not run_script("prepare.sh", script_dir, env):
         ui.complete_phase("phase1", success=False)
+        events.phase_complete(1, success=False)
         last_failing_phase = "Phase 1: Preparing working directories"
     else:
         ui.complete_phase("phase1", success=True)
+        events.phase_complete(1, success=True)
 
     # Phase 2: Copy source files
     if last_failing_phase is None:
         ui.start_phase("phase2")
+        events.phase_start(2, "Copying source files")
         if not run_script("copy-src.sh", script_dir, env):
             ui.complete_phase("phase2", success=False)
+            events.phase_complete(2, success=False)
             last_failing_phase = "Phase 2: Copying source files"
         else:
             ui.complete_phase("phase2", success=True)
+            events.phase_complete(2, success=True)
 
     # Phase 3: Install dependencies
     if last_failing_phase is None:
         ui.start_phase("phase3")
+        events.phase_start(3, "Installing dependencies")
         if not run_script("install-deps.sh", script_dir, env):
             ui.complete_phase("phase3", success=False)
+            events.phase_complete(3, success=False)
             last_failing_phase = "Phase 3: Installing dependencies"
         else:
             ui.complete_phase("phase3", success=True)
+            events.phase_complete(3, success=True)
 
     # Phase 4: Compile packages
     if last_failing_phase is None:
         ui.start_phase("phase4")
+        events.phase_start(4, "Compiling packages")
         if not run_script("build-src.sh", script_dir, env):
             ui.complete_phase("phase4", success=False)
+            events.phase_complete(4, success=False)
             last_failing_phase = "Phase 4: Compiling packages"
         else:
             ui.complete_phase("phase4", success=True)
+            events.phase_complete(4, success=True)
 
     # Source the setup.bash for subsequent phases
     if last_failing_phase is None:
@@ -510,48 +442,62 @@ def main() -> int:
     # Phase 5: Generate rosdep list
     if last_failing_phase is None:
         ui.start_phase("phase5")
+        events.phase_start(5, "Generating rosdep list")
         if not run_script("create-rosdep-list.sh", script_dir, env):
             ui.complete_phase("phase5", success=False)
+            events.phase_complete(5, success=False)
             last_failing_phase = "Phase 5: Generating rosdep list"
         else:
             ui.complete_phase("phase5", success=True)
+            events.phase_complete(5, success=True)
 
     # Phase 6: Create package list
     if last_failing_phase is None:
         ui.start_phase("phase6")
+        events.phase_start(6, "Creating package list")
         if not run_script("create-package-list.sh", script_dir, env):
             ui.complete_phase("phase6", success=False)
+            events.phase_complete(6, success=False)
             last_failing_phase = "Phase 6: Creating package list"
         else:
             ui.complete_phase("phase6", success=True)
+            events.phase_complete(6, success=True)
 
     # Phase 7: Generate Debian metadata
     if last_failing_phase is None:
         if not args.skip_gen_debian:
             ui.start_phase("phase7")
+            events.phase_start(7, "Generating Debian metadata")
             if not run_python_script("generate_debian_dir.py", script_dir, env):
                 ui.complete_phase("phase7", success=False)
+                events.phase_complete(7, success=False)
                 last_failing_phase = "Phase 7: Generating Debian metadata"
             else:
                 ui.complete_phase("phase7", success=True)
+                events.phase_complete(7, success=True)
         else:
             ui.skip_phase("phase7")
+            events.phase_skip(7)
 
     # Phase 8: Build Debian packages
     if last_failing_phase is None:
         if not args.skip_build_deb:
             ui.start_phase("phase8")
+            events.phase_start(8, "Building Debian packages")
             if not run_python_script("build_deb.py", script_dir, env):
                 # build_deb.py may return non-zero if some packages fail
                 # but we still want to show the summary (packages may have partial success)
                 ui.complete_phase("phase8", success=True)  # Partial success is still "done"
+                events.phase_complete(8, success=True)
             else:
                 ui.complete_phase("phase8", success=True)
+                events.phase_complete(8, success=True)
         else:
             ui.skip_phase("phase8")
+            events.phase_skip(8)
 
-    if last_failing_phase is None:
-        print(f"Packages are in: {release_dir}")
+    # Emit build complete event
+    events.build_complete(success=(last_failing_phase is None))
 
     # Print summary (always runs, even on failure, to generate summary.txt)
     return print_summary(
