@@ -289,7 +289,9 @@ def main() -> int:
     failed_count = sum(1 for r in results if r.status == DebianDirStatus.FAILED)
 
     if failed_count > 0:
-        print(f"Generated {success_count}/{len(results)} debian directories ({failed_count} failed)")
+        print(
+            f"Generated {success_count}/{len(results)} debian directories ({failed_count} failed)"
+        )
         for r in results:
             if r.status == DebianDirStatus.FAILED:
                 print(f"  - {r.package}: {r.error}")

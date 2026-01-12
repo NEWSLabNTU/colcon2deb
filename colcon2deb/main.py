@@ -18,13 +18,13 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-# Regex to strip ANSI escape codes
-_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
-
 import yaml
 
 from .events import EVENT_FILE
 from .ui import BuildUI
+
+# Regex to strip ANSI escape codes
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 
 # Global state for signal handling
 _container_id = None
@@ -330,7 +330,7 @@ def run_command(cmd, check=True, log_file=None, stream_output=False):
             process.wait()
 
             if process.returncode != 0:
-                print(f"  ✗ Failed", file=sys.stderr)
+                print("  ✗ Failed", file=sys.stderr)
                 if check:
                     raise subprocess.CalledProcessError(
                         process.returncode, cmd, "\n".join(stdout_lines), ""
@@ -404,7 +404,6 @@ def download_dockerfile(url, cache_dir=None):
         request = urllib.request.Request(url, headers={"User-Agent": "colcon2deb/1.0"})
         with urllib.request.urlopen(request, timeout=30) as response:
             content = response.read()
-            content_length = len(content)
 
         # Validate it looks like a Dockerfile
         content_str = content.decode("utf-8", errors="ignore")
@@ -441,7 +440,9 @@ def download_dockerfile(url, cache_dir=None):
         sys.exit(1)
 
 
-def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None, log_dir=None, platform=None):
+def build_image_from_dockerfile(
+    dockerfile_path, image_name, build_context=None, log_dir=None, platform=None
+):
     """Build Docker image from Dockerfile."""
     dockerfile_path = Path(dockerfile_path).resolve()
     if not dockerfile_path.exists():
@@ -461,13 +462,15 @@ def build_image_from_dockerfile(dockerfile_path, image_name, build_context=None,
     # Add platform flag for cross-compilation (e.g., building arm64 on amd64 host)
     if platform:
         cmd.extend(["--platform", platform])
-    cmd.extend([
-        str(build_context),
-        "-f",
-        str(dockerfile_path),
-        "-t",
-        image_name,
-    ])
+    cmd.extend(
+        [
+            str(build_context),
+            "-f",
+            str(dockerfile_path),
+            "-t",
+            image_name,
+        ]
+    )
 
     print(f"Building Docker image '{image_name}'...")
 
@@ -775,14 +778,16 @@ def main():
         f"{rosdeb_bloom_dir}:/rosdeb-bloom:ro",
     ]
 
-    docker_cmd.extend([
-        image_name,
-        "/helper/entry.sh",
-        f"--uid={uid}",
-        f"--gid={gid}",
-        "--output=/output",
-        f"--log-dir=/output/logs/{log_timestamp}",
-    ])
+    docker_cmd.extend(
+        [
+            image_name,
+            "/helper/entry.sh",
+            f"--uid={uid}",
+            f"--gid={gid}",
+            "--output=/output",
+            f"--log-dir=/output/logs/{log_timestamp}",
+        ]
+    )
 
     # Add skip options if specified
     if args.skip_rosdep_install:

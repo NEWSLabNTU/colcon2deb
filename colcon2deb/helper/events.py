@@ -35,11 +35,7 @@ def emit(event_type: str, **kwargs):
     if _event_file is None:
         return
 
-    event = {
-        "type": event_type,
-        "timestamp": datetime.now().isoformat(),
-        **kwargs
-    }
+    event = {"type": event_type, "timestamp": datetime.now().isoformat(), **kwargs}
 
     with open(_event_file, "a") as f:
         f.write(json.dumps(event) + "\n")

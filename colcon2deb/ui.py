@@ -18,7 +18,6 @@ from pathlib import Path
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
-from rich.spinner import Spinner
 from rich.text import Text
 
 # Spinner frames for running state
@@ -123,9 +122,7 @@ class BuildUI:
     def complete_phase(self, phase_id: str, success: bool = True) -> None:
         """Mark a phase as completed or failed."""
         if phase_id in self.phases:
-            self.phases[phase_id].status = (
-                PhaseStatus.COMPLETED if success else PhaseStatus.FAILED
-            )
+            self.phases[phase_id].status = PhaseStatus.COMPLETED if success else PhaseStatus.FAILED
             self.phases[phase_id].end_time = time.time()
             if self.current_phase == phase_id:
                 self.current_phase = None

@@ -187,7 +187,9 @@ def print_summary(
     # Print concise summary
     print("")
     if failed_pkgs > 0:
-        print(f"Build completed with failures: {successful_pkgs}/{total_pkgs} succeeded, {failed_pkgs} failed")
+        print(
+            f"Build completed with failures: {successful_pkgs}/{total_pkgs} succeeded, {failed_pkgs} failed"
+        )
         # Show failed packages
         try:
             with open(failed_pkgs_file) as f:

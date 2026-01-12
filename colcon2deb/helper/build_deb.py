@@ -79,7 +79,9 @@ def get_package_list(colcon_work_dir: Path) -> list[tuple[str, Path]]:
     return packages
 
 
-def find_deb_file(directory: Path, ros_distro: str, pkg_name_dashed: str, package_suffix: str | None = None) -> Path | None:
+def find_deb_file(
+    directory: Path, ros_distro: str, pkg_name_dashed: str, package_suffix: str | None = None
+) -> Path | None:
     """Find a .deb file matching the package pattern."""
     if package_suffix:
         pattern = f"ros-{ros_distro}-{pkg_name_dashed}-{package_suffix}_*.deb"
@@ -89,7 +91,9 @@ def find_deb_file(directory: Path, ros_distro: str, pkg_name_dashed: str, packag
     return matches[0] if matches else None
 
 
-def find_ddeb_file(directory: Path, ros_distro: str, pkg_name_dashed: str, package_suffix: str | None = None) -> Path | None:
+def find_ddeb_file(
+    directory: Path, ros_distro: str, pkg_name_dashed: str, package_suffix: str | None = None
+) -> Path | None:
     """Find a .ddeb debug file matching the package pattern."""
     if package_suffix:
         pattern = f"ros-{ros_distro}-{pkg_name_dashed}-{package_suffix}-dbgsym_*.ddeb"
@@ -324,7 +328,9 @@ def main() -> int:
 
     # Summary
     if failed:
-        print(f"Built {len(successful)}/{len(packages)} packages ({len(failed)} failed, {len(skipped)} cached)")
+        print(
+            f"Built {len(successful)}/{len(packages)} packages ({len(failed)} failed, {len(skipped)} cached)"
+        )
         for r in results:
             if r.status == BuildStatus.FAILED:
                 print(f"  - {r.package}: {r.error}")
