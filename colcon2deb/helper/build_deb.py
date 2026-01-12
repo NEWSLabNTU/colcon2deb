@@ -173,10 +173,12 @@ def build_single_package(
         shutil.copytree(src_debian_dir, dst_debian_dir)
 
         # Build the package
+        # Use per_pkg_parallel from environment (set by main())
+        per_pkg_parallel = int(os.environ.get("COLCON2DEB_PER_PKG_PARALLEL", os.cpu_count() or 1))
         env = os.environ.copy()
         env["ROS_INSTALL_PREFIX"] = ros_install_prefix
         env["COLCON_INSTALL_PATH"] = colcon_install_path
-        env["DEB_BUILD_OPTIONS"] = f"parallel={os.cpu_count() or 1}"
+        env["DEB_BUILD_OPTIONS"] = f"parallel={per_pkg_parallel}"
 
         result = subprocess.run(
             ["fakeroot", "debian/rules", "binary"],
@@ -262,9 +264,15 @@ def main() -> int:
     packages = get_package_list(colcon_work_dir)
     print(f"Building {len(packages)} packages...")
 
-    # Use 1/4 of CPU cores for parallel package builds to avoid resource exhaustion
-    # Each package build itself uses parallel compilation via DEB_BUILD_OPTIONS
-    njobs = max(1, (os.cpu_count() or 1 + 3) // 4)
+    # Parallel package builds: use half of CPU cores for cross-package parallelism
+    # Each package also gets half the CPU cores for its internal build parallelism
+    # This balances resource usage while maximizing throughput
+    cpu_count = os.cpu_count() or 1
+    njobs = max(1, cpu_count // 2)
+    per_pkg_parallel = max(1, cpu_count // 2)
+
+    # Set environment variable for build_single_package to use
+    os.environ["COLCON2DEB_PER_PKG_PARALLEL"] = str(per_pkg_parallel)
 
     # Process packages in parallel
     results: list[BuildResult] = []

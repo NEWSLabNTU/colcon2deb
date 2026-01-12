@@ -24,6 +24,14 @@ ifneq ($(filter nocheck,$(DEB_BUILD_OPTIONS)),)
 	BUILD_TESTING_ARG=-DBUILD_TESTING=OFF
 endif
 
+# Extract parallel job count from DEB_BUILD_OPTIONS (e.g., "parallel=4")
+# Default to 1 if not specified
+ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+	PARALLEL_JOBS := $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+else
+	PARALLEL_JOBS := 1
+endif
+
 DEB_HOST_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
 
 # Colcon workspace install path (set by colcon2deb, defaults to empty)
@@ -76,7 +84,7 @@ override_dh_auto_build:
 	source "$(SETUP_SCRIPT)" 2>/dev/null || true && \
 	export CMAKE_PREFIX_PATH="$(PATH_INSTALL):$(PATH_ROS):$$CMAKE_PREFIX_PATH" && \
 	export AMENT_PREFIX_PATH="$(PATH_INSTALL):$(PATH_ROS):$$AMENT_PREFIX_PATH" && \
-	$(MAKE) -C .obj-$(DEB_HOST_GNU_TYPE)
+	$(MAKE) -j$(PARALLEL_JOBS) -C .obj-$(DEB_HOST_GNU_TYPE)
 
 override_dh_auto_test:
 	# Source setup script for test environment (preserves package-level paths from local_setup.bash)

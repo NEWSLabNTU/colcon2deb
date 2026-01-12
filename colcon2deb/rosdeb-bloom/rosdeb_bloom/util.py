@@ -239,7 +239,7 @@ def my_copytree(tree, destination, ignores=None):
 
 
 def add_global_arguments(parser):
-    from bloom import __version__
+    from rosdeb_bloom import __version__
     group = parser.add_argument_group('global')
     add = group.add_argument
     add('-d', '--debug', help='enable debug messages',

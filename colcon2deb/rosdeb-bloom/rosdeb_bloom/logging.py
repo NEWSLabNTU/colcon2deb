@@ -291,8 +291,8 @@ try:
     _file_log_path = os.path.join(_file_log_prefix, _log_id + '.log')
     _file_log = open(_file_log_path, 'a')
     if str(os.getpid()) == _log_id:
-        import bloom
-        _file_log.write("[bloom] bloom version " + bloom.__version__ + "\n")
+        import rosdeb_bloom
+        _file_log.write("[rosdeb_bloom] version " + rosdeb_bloom.__version__ + "\n")
 except Exception as exc:
     _file_log = None
     error("Logging is not working: {0}: {1}".format(exc.__class__.__name__, exc))

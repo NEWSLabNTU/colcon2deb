@@ -41,14 +41,14 @@ import os
 import sys
 import traceback
 
-from bloom.git import show
+from rosdeb_bloom.git import show
 
-from bloom.config import BLOOM_CONFIG_BRANCH
+from rosdeb_bloom.config import BLOOM_CONFIG_BRANCH
 
-from bloom.logging import debug
-from bloom.logging import error
-from bloom.logging import info
-from bloom.logging import warning
+from rosdeb_bloom.logging import debug
+from rosdeb_bloom.logging import error
+from rosdeb_bloom.logging import info
+from rosdeb_bloom.logging import warning
 
 try:
     from catkin_pkg.packages import find_packages
