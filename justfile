@@ -5,22 +5,7 @@ VERSION := `grep '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*
 
 # Show available recipes
 default:
-    @echo 'Available recipes:'
-    @echo ''
-    @echo 'just build'
-    @echo '    Build Python wheel package for release.'
-    @echo ''
-    @echo 'just install'
-    @echo '    Install the wheel package.'
-    @echo ''
-    @echo 'just install-dev'
-    @echo '    Install package in development mode.'
-    @echo ''
-    @echo 'just clean'
-    @echo '    Clean up build artifacts.'
-    @echo ''
-    @echo 'just test'
-    @echo '    Run tests.'
+    @just --list
 
 # Build Python wheel package for release
 build:
@@ -43,7 +28,7 @@ install:
     fi
 
     echo "Installing wheel package..."
-    pip install dist/colcon2deb-{{VERSION}}-py3-none-any.whl
+    pip install --force-reinstall dist/colcon2deb-{{VERSION}}-py3-none-any.whl
     echo "Installed successfully. Use 'colcon2deb --help' to test."
 
 # Install package in development mode
