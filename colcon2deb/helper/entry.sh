@@ -97,7 +97,12 @@ groupadd -g "$gid" "$name" 2>/dev/null || true
 useradd -m -u "$uid" -g "$gid" -s /bin/bash "$name" 2>/dev/null || true
 echo "$name ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$name
 
-# Install pip packages as root (before switching to user)
+# Install required dependencies
+echo "Installing build dependencies..."
+apt-get update -qq
+apt-get install -y -qq parallel fakeroot debhelper dh-python rsync > /dev/null
+
+# Install pip packages
 echo "Installing rosdeb-bloom and rich..."
 pip install --quiet /rosdeb-bloom rich
 
@@ -119,21 +124,6 @@ skip_opts="$@"
 if [ -f "/colcon2deb-setup.sh" ]; then
     echo "Sourcing /colcon2deb-setup.sh..."
     source /colcon2deb-setup.sh
-fi
-
-# Check required dependencies
-echo "Checking required dependencies..."
-missing_deps=()
-for cmd in parallel fakeroot dpkg-buildpackage rsync python3; do
-    if ! command -v "$cmd" &> /dev/null; then
-        missing_deps+=("$cmd")
-    fi
-done
-
-if [ ${#missing_deps[@]} -ne 0 ]; then
-    echo "Error: Missing required dependencies: ${missing_deps[*]}" >&2
-    echo "Please install them in your Dockerfile." >&2
-    exit 1
 fi
 
 # Update rosdep as user
