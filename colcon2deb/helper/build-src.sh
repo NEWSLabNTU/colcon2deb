@@ -12,13 +12,18 @@ if [ "$colcon_build" = y ]; then
         cmake_args="$cmake_args $COLCON2DEB_CMAKE_ARGS"
     fi
 
-    # Redirect detailed output to log file
-    colcon build --base-paths src \
+    # Build with output to both terminal and log file
+    # Use stdbuf for unbuffered output so TUI shows progress in real-time
+    stdbuf -oL colcon build --base-paths src \
         --cmake-args $cmake_args \
         --event-handlers console_direct+ \
-        > "$colcon_log" 2>&1 || {
+        2>&1 | tee "$colcon_log"
+    build_status=${PIPESTATUS[0]}
+
+    # Check if colcon build succeeded
+    if [ "$build_status" -ne 0 ]; then
         echo 'error: colcon build failed' >&2
         tail -n 20 "$colcon_log" >&2
         exit 1
-    }
+    fi
 fi
