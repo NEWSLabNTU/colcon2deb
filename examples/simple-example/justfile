@@ -9,12 +9,7 @@ default:
 
 # Build Debian packages
 build:
-    #!/usr/bin/env bash
-    set -eo pipefail
-    echo "Building ${pkg_count} packages..."
-
-    # Use project venv colcon2deb
-    {{project_root}}/.venv/bin/colcon2deb --workspace source --config config.yaml
+    @{{project_root}}/.venv/bin/colcon2deb --workspace source --config config.yaml
 
 # Clean build artifacts
 clean:
