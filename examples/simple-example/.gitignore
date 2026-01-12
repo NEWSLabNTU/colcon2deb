@@ -1,1 +1,5 @@
+# Build artifacts
 build/
+
+# Generated debian packaging (keep .gitkeep)
+debian-overrides/*/
