@@ -153,10 +153,12 @@ def run_command(cmd, check=True, log_file=None, show_output=False):
             print(f"Running: {' '.join(cmd)}")
             print(f"  Output logged to: {log_file}")
 
+        # Run without check so we can log output before raising exception
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+
         with open(log_file, "w") as log:
             log.write(f"Command: {' '.join(cmd)}\n")
             log.write("=" * 80 + "\n\n")
-            result = subprocess.run(cmd, check=check, capture_output=True, text=True)
             if result.stdout:
                 log.write(result.stdout)
             if result.stderr:
@@ -165,9 +167,13 @@ def run_command(cmd, check=True, log_file=None, show_output=False):
                 log.write(result.stderr)
 
         # Show summary on error
-        if result.returncode != 0 and not show_output:
+        if result.returncode != 0:
             print(f"✗ Command failed with exit code {result.returncode}", file=sys.stderr)
             print(f"  See log: {log_file}", file=sys.stderr)
+            if check:
+                raise subprocess.CalledProcessError(
+                    result.returncode, cmd, result.stdout, result.stderr
+                )
         elif show_output:
             print("  ✓ Complete")
 

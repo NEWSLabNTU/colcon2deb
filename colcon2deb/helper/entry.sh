@@ -91,23 +91,27 @@ if [ -z "$uid" -o -z "$gid" ]; then
     exit 1
 fi
 
-# Create a user for the specfied uid/gid (for fixing file permissions at the end)
-name=ubuntu
+# Create a user with the host uid/gid and grant passwordless sudo
+name=builder
 groupadd -g "$gid" "$name" 2>/dev/null || true
-useradd -m -u "$uid" -g "$gid" "$name" 2>/dev/null || true
+useradd -m -u "$uid" -g "$gid" -s /bin/bash "$name" 2>/dev/null || true
+echo "$name ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$name
 
-# Fix file ownership so host user can access the output
-# This runs on ANY exit (success, failure, or interrupt) to prevent
-# root-owned files from being left on the host
-fix_permissions() {
-    echo "Fixing file permissions..."
-    chown -R "$uid:$gid" /output 2>/dev/null || true
-}
-trap fix_permissions EXIT
+# Install pip packages as root (before switching to user)
+echo "Installing rosdeb-bloom and rich..."
+pip install --quiet /rosdeb-bloom rich
 
-# Run the build script as root (to avoid sudo/nosuid issues with Docker volumes)
-# Both workspace and output are always required now
-#
+# Create a script to run as the builder user
+cat > /tmp/build-as-user.sh << 'USERSCRIPT'
+#!/usr/bin/env bash
+set -e
+
+script_dir="$1"
+output="$2"
+log_dir="$3"
+shift 3
+skip_opts="$@"
+
 # Source optional user-provided setup script if it exists.
 # Users can create /colcon2deb-setup.sh in their Docker image to set up
 # ROS environment or any other build dependencies. Example:
@@ -117,10 +121,28 @@ if [ -f "/colcon2deb-setup.sh" ]; then
     source /colcon2deb-setup.sh
 fi
 
+# Check required dependencies
+echo "Checking required dependencies..."
+missing_deps=()
+for cmd in parallel fakeroot dpkg-buildpackage rsync python3; do
+    if ! command -v "$cmd" &> /dev/null; then
+        missing_deps+=("$cmd")
+    fi
+done
+
+if [ ${#missing_deps[@]} -ne 0 ]; then
+    echo "Error: Missing required dependencies: ${missing_deps[*]}" >&2
+    echo "Please install them in your Dockerfile." >&2
+    exit 1
+fi
+
+# Update rosdep as user
 rosdep update
 
-# Install dependencies for helper scripts
-echo "Installing rosdeb-bloom and rich..."
-pip install --quiet /rosdeb-bloom rich
+# Run the main build script
+exec python3 "$script_dir/main.py" --workspace=/workspace --output="$output" --log-dir="$log_dir" $skip_opts
+USERSCRIPT
+chmod +x /tmp/build-as-user.sh
 
-python3 "$script_dir/main.py" --workspace=/workspace --output="$output" --log-dir="$log_dir" $skip_opts
+# Run everything as the host user so files are owned correctly
+exec su "$name" -c "/tmp/build-as-user.sh '$script_dir' '$output' '$log_dir' $skip_opts"
