@@ -10,15 +10,7 @@ default:
 # Build Debian packages
 build:
     #!/usr/bin/env bash
-    set -euo pipefail
-
-    # Verify source exists
-    if [ ! -d source/src ]; then
-        echo "Error: source/src not found"
-        exit 1
-    fi
-
-    pkg_count=$(find source/src -name "package.xml" | wc -l)
+    set -eo pipefail
     echo "Building ${pkg_count} packages..."
 
     # Use project venv colcon2deb
