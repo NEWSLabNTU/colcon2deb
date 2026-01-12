@@ -13,7 +13,7 @@ build:
 
 # Clean build artifacts
 clean:
-    rm -rf build/
+    rm -rf build/ debian-overrides/*
 
 # List packages in workspace
 list:
