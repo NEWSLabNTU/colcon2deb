@@ -130,15 +130,12 @@ def build_single_package(
         # Check if package is already built
         existing_deb = find_deb_file(check_dir, ros_distro, pkg_name_dashed, package_suffix)
         if existing_deb:
-            print(f"info: skip {pkg_name} that its Debian package is already built")
             return BuildResult(
                 package=pkg_name,
                 pkg_dir=pkg_dir,
                 status=BuildStatus.SKIPPED,
                 deb_file=existing_deb,
             )
-
-        print(f"info: build Debian package for {pkg_name}")
 
         # Check debian directory exists in work dir
         src_debian_dir = pkg_work_dir / "debian"
@@ -207,7 +204,6 @@ def build_single_package(
         if deb_file:
             dest_deb = release_dir / deb_file.name
             shutil.move(str(deb_file), str(dest_deb))
-            print(f"info: build successful for {pkg_name}")
 
             # Also move .ddeb if exists
             ddeb_file = find_ddeb_file(parent_dir, ros_distro, pkg_name_dashed, package_suffix)
@@ -261,17 +257,14 @@ def main() -> int:
     skipped_pkgs_file = Path(os.environ.get("skipped_pkgs_file", str(log_dir / "skipped_pkgs.txt")))
 
     os.chdir(colcon_work_dir)
-    print("info: build Debian packages")
-    print(f"info: using install prefix: {ros_install_prefix}")
 
     # Get package list
     packages = get_package_list(colcon_work_dir)
-    print(f"info: found {len(packages)} packages")
+    print(f"Building {len(packages)} packages...")
 
     # Use 1/4 of CPU cores for parallel package builds to avoid resource exhaustion
     # Each package build itself uses parallel compilation via DEB_BUILD_OPTIONS
     njobs = max(1, (os.cpu_count() or 1 + 3) // 4)
-    print(f"info: using {njobs} parallel workers")
 
     # Process packages in parallel
     results: list[BuildResult] = []
@@ -322,15 +315,13 @@ def main() -> int:
     skipped_pkgs_file.write_text("\n".join(skipped) + "\n" if skipped else "")
 
     # Summary
-    print(f"info: built {len(successful)} packages successfully")
-    print(f"info: skipped {len(skipped)} packages (already built)")
-    print(f"info: failed {len(failed)} packages")
-
     if failed:
-        print("warning: failed packages:")
+        print(f"Built {len(successful)}/{len(packages)} packages ({len(failed)} failed, {len(skipped)} cached)")
         for r in results:
             if r.status == BuildStatus.FAILED:
                 print(f"  - {r.package}: {r.error}")
+    else:
+        print(f"Built {len(successful)} packages ({len(skipped)} cached)")
 
     return 0 if not failed else 1
 

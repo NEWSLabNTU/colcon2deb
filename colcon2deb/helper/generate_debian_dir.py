@@ -112,7 +112,6 @@ def copy_or_create_debian_dir(
     try:
         if src_debian_dir.is_dir():
             # Copy pre-defined debian directory
-            print(f"info: copy provided debian directory for {pkg_name}")
 
             result = subprocess.run(
                 ["rsync", "-av", "--delete", f"{src_debian_dir}/", f"{dst_debian_dir}/"],
@@ -141,7 +140,6 @@ def copy_or_create_debian_dir(
 
         else:
             # Generate using rosdeb_bloom library
-            print(f"info: run rosdeb_bloom for {pkg_name}")
 
             # Ensure ~/.config exists for bloom
             home_config = Path.home() / ".config"
@@ -224,18 +222,16 @@ def main() -> int:
     package_suffix = os.environ.get("ROS_PACKAGE_SUFFIX") or None
 
     os.chdir(colcon_work_dir)
-    print("info: generate Debian packaging scripts")
 
     # Get package list
     packages = get_package_list(colcon_work_dir)
-    print(f"info: found {len(packages)} packages")
+    print(f"Processing {len(packages)} packages...")
 
     # Get all package names for peer_packages (to skip rosdep resolution for workspace packages)
     all_package_names = [pkg_name for pkg_name, _ in packages]
 
     # Use half the CPU cores for I/O-heavy operations
     njobs = max(1, (os.cpu_count() or 1 + 1) // 2)
-    print(f"info: using {njobs} parallel workers")
 
     # Process packages in parallel
     results: list[DebianDirResult] = []
@@ -280,22 +276,14 @@ def main() -> int:
     # Summary
     success_count = sum(1 for r in results if r.status == DebianDirStatus.SUCCESS)
     failed_count = sum(1 for r in results if r.status == DebianDirStatus.FAILED)
-    copy_count = sum(
-        1 for r in results if r.method == "copy" and r.status == DebianDirStatus.SUCCESS
-    )
-    bloom_count = sum(
-        1 for r in results if r.method == "bloom" and r.status == DebianDirStatus.SUCCESS
-    )
-
-    print(
-        f"info: generated {success_count} debian directories ({copy_count} copied, {bloom_count} bloom-generated)"
-    )
 
     if failed_count > 0:
-        print(f"warning: {failed_count} packages failed to generate debian directory")
+        print(f"Generated {success_count}/{len(results)} debian directories ({failed_count} failed)")
         for r in results:
             if r.status == DebianDirStatus.FAILED:
                 print(f"  - {r.package}: {r.error}")
+    else:
+        print(f"Generated {success_count} debian directories")
 
     return 0 if failed_count == 0 else 1
 

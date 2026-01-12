@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-echo 'info: prepare working directories'
-
 # Create directories first before trying to create files in them
 mkdir -p "$top_work_dir"
 mkdir -p "$colcon_work_dir"
@@ -35,6 +33,4 @@ if [ -d "$colcon_work_dir/src" ]; then
     # This avoids bash function export issues with /bin/sh
     colcon list --base-paths src | cut -f1 | \
         parallel -j "$njobs_io" "mkdir -p '$pkg_build_dir'/{}; rm -f '$pkg_build_dir'/{}/*.out '$pkg_build_dir'/{}/*.err"
-else
-    echo "info: skipping package directory cleanup (src not yet copied)"
 fi

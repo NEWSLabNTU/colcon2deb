@@ -1,10 +1,7 @@
-echo 'info: generate Debian package list'
-
 cd "$colcon_work_dir"
 
 # Detect Ubuntu codename
 ubuntu_codename=$(lsb_release -cs 2>/dev/null || echo "jammy")
-echo "info: detected Ubuntu codename: $ubuntu_codename"
 
 colcon info --base-paths src | awk -v codename="$ubuntu_codename" '\
 $0 ~ /^  name: / {
