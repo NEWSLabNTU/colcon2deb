@@ -113,6 +113,7 @@ git push origin vX.Y.Z
 - `tests/` - Test suite
 - `examples/` - Example configurations
   - `simple-example/` - Simple test workspace
+  - `custom-example/` - Demonstrates package suffix and custom install prefix
 - `.github/workflows/` - CI/CD workflows
 - `pyproject.toml` - Python project configuration (uv compatible)
 - `justfile` - Build automation
@@ -134,6 +135,7 @@ git push origin vX.Y.Z
 - **Read-only source mounts** - Prevents accidental modifications
 - **Isolated builds** - Everything runs in Docker containers
 - **Custom install prefix** - Configurable via `install_prefix` in config.yaml
+- **Package suffix support** - Append version suffix to package names via `package_suffix`
 - **Vendored rosdeb-bloom** - Modified bloom with install prefix and ament_python fixes
 
 ## Configuration File Format
@@ -159,6 +161,13 @@ workspace_dir: ./source
 output_dir: ./build
 image: my-builder:latest
 install_prefix: /opt/autoware/custom
+
+# With package suffix (e.g., ros-humble-pkg-1.0.0 instead of ros-humble-pkg)
+workspace_dir: ./source
+output_dir: ./build
+image: my-builder:latest
+install_prefix: /opt/myproject
+package_suffix: "1.0.0"
 ```
 
 ## Important Files
@@ -184,13 +193,49 @@ The `colcon2deb/rosdeb-bloom/` directory contains an embedded modified bloom pac
 
 The package is pip-installed from `/rosdeb-bloom` inside the container by `entry.sh`.
 
+## Output Directory Structure
+
+The build output directory (`build/` by default) contains:
+
+```
+build/
+├── debs/                    # Output .deb files
+├── logs/                    # Build logs
+│   ├── <timestamp>/         # Timestamped log directory
+│   │   ├── logs/            # Phase log files
+│   │   │   ├── docker_build.log
+│   │   │   ├── phase3_apt_update.log
+│   │   │   ├── phase3_apt_install.log
+│   │   │   ├── phase4_colcon_build.log
+│   │   │   └── phase5_rosdep.log
+│   │   ├── reports/         # Status and summary files
+│   │   │   ├── summary.txt
+│   │   │   ├── packages.txt
+│   │   │   ├── successful.txt
+│   │   │   ├── failed.txt
+│   │   │   └── skipped.txt
+│   │   └── scripts/         # Generated scripts
+│   │       └── install_deps.sh
+│   └── latest -> <timestamp>
+├── packaging/               # Debian packaging work directory
+│   └── <package>/
+│       └── debian/          # Generated debian files
+└── workspace/               # Colcon workspace copy
+    ├── build/               # Colcon build artifacts
+    ├── install/             # Colcon install artifacts
+    ├── log/                 # Colcon logs
+    └── src/                 # Source files
+```
+
 ## Debugging
 
 ### Build Logs
-Logs are in `build/log/<timestamp>/`:
-- `summary.txt` - Build summary
-- `<package>/gen_deb.{out,err}` - Debian generation logs
-- `<package>/build.{out,err}` - Package build logs
+Logs are organized in `build/logs/latest/`:
+- `logs/` - Phase execution logs (docker_build, apt, colcon, rosdep)
+- `reports/summary.txt` - Build summary with statistics
+- `reports/{successful,failed,skipped}.txt` - Package status lists
+- `packaging/<package>/gen_deb.{out,err}` - Debian generation logs
+- `packaging/<package>/build.{out,err}` - Package build logs
 
 ### Common Issues
 
