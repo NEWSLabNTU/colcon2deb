@@ -233,6 +233,13 @@ def resolve_dependencies(
     resolved_keys = {}
     keys = [k.name for k in keys]
     for key in keys:
+        # If key is in peer_packages, use fallback resolver directly.
+        # This ensures workspace packages get the correct suffix applied
+        # instead of resolving to standard ROS package names via rosdep.
+        if key in peer_packages:
+            resolved_keys[key] = fallback_resolver(key, peer_packages)
+            continue
+
         resolved_key, installer_key, default_installer_key = \
             resolve_rosdep_key(key, os_name, os_version, ros_distro,
                                peer_packages, retry=True)
