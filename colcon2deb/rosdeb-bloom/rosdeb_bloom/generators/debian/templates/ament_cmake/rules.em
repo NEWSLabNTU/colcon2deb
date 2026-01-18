@@ -76,7 +76,7 @@ override_dh_auto_configure:
 		-DCMAKE_INSTALL_PREFIX=@(InstallationPrefix) \
 		-DCMAKE_BUILD_TYPE=None \
 		-DCMAKE_VERBOSE_MAKEFILE=ON \
-		-DCMAKE_INSTALL_LIBDIR=lib/$(DEB_HOST_GNU_TYPE) \
+		-DCMAKE_INSTALL_LIBDIR=lib \
 		$(BUILD_TESTING_ARG)
 
 override_dh_auto_build:
