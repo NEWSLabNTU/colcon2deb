@@ -268,12 +268,20 @@ def main() -> int:
     packages = get_package_list(colcon_work_dir)
     print(f"Building {len(packages)} packages...")
 
-    # Parallel package builds: use half of CPU cores for cross-package parallelism
-    # Each package also gets half the CPU cores for its internal build parallelism
-    # This balances resource usage while maximizing throughput
+    # Parallel package builds: balance cross-package and per-package parallelism
+    # Total concurrent processes = njobs × per_pkg_parallel ≤ total_parallel
+    # Using sqrt distribution: njobs ≈ √total, per_pkg_parallel ≈ total / njobs
     cpu_count = os.cpu_count() or 1
-    njobs = max(1, cpu_count // 2)
-    per_pkg_parallel = max(1, cpu_count // 2)
+
+    # Read parallel_jobs from config (via environment variable)
+    # If set to 0 or not set, auto-calculate based on CPU count
+    config_parallel = int(os.environ.get("COLCON2DEB_PARALLEL_JOBS", 0))
+    total_parallel = config_parallel if config_parallel > 0 else cpu_count
+
+    njobs = max(1, int(total_parallel ** 0.5))
+    per_pkg_parallel = max(1, total_parallel // njobs)
+
+    print(f"Parallelism: {njobs} packages × {per_pkg_parallel} jobs/pkg = {njobs * per_pkg_parallel} total (config: {config_parallel}, CPU: {cpu_count})")
 
     # Set environment variable for build_single_package to use
     os.environ["COLCON2DEB_PER_PKG_PARALLEL"] = str(per_pkg_parallel)

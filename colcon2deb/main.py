@@ -747,6 +747,11 @@ def main():
     # Example: "1.5.0" results in packages like ros-humble-autoware-utils-1.5.0
     package_suffix = build_config.get("package_suffix")
 
+    # Get parallel jobs configuration (optional)
+    # Controls total parallelism during deb packaging phase
+    # Default: 0 (auto-calculate based on CPU count)
+    parallel_jobs = build_config.get("parallel_jobs", 0)
+
     # rosdeb-bloom is the vendored debian generator library inside colcon2deb
     rosdeb_bloom_dir = script_dir / "rosdeb-bloom"
     if not rosdeb_bloom_dir.exists():
@@ -768,6 +773,8 @@ def main():
         f"ROS_INSTALL_PREFIX={install_prefix}",
         "-e",
         f"ROS_PACKAGE_SUFFIX={package_suffix or ''}",
+        "-e",
+        f"COLCON2DEB_PARALLEL_JOBS={parallel_jobs}",
         "-v",
         "/tmp/.X11-unix/:/tmp/.X11-unix",
         "-v",
