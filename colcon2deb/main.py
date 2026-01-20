@@ -16,7 +16,10 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from importlib.metadata import version
 from pathlib import Path
+
+__version__ = version("colcon2deb")
 
 import yaml
 
@@ -504,6 +507,7 @@ def load_config(config_path):
 
 def main():
     parser = argparse.ArgumentParser(description="Build Debian packages from colcon workspace")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     # Workspace directory
     parser.add_argument(
