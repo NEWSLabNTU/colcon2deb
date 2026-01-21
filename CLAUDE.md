@@ -132,6 +132,7 @@ git push origin vX.Y.Z
 - **Isolated builds** - Everything runs in Docker containers
 - **Custom install prefix** - Configurable via `install_prefix` in config.yaml
 - **Package suffix support** - Append version suffix to package names via `package_suffix`
+- **Parallel builds** - Configurable via `parallel_jobs` in config.yaml (affects colcon build, debian generation, and package building)
 - **Vendored rosdeb-bloom** - Modified bloom with install prefix and ament_python fixes
 
 ## Configuration File Format
@@ -164,6 +165,12 @@ output_dir: ./build
 image: my-builder:latest
 install_prefix: /opt/myproject
 package_suffix: "1.0.0"
+
+# With parallel jobs (default: auto-detect based on CPU count)
+workspace_dir: ./source
+output_dir: ./build
+image: my-builder:latest
+parallel_jobs: 4  # Limits parallelism across all build phases
 ```
 
 ## Important Files
