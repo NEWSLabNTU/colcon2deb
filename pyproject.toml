@@ -1,6 +1,6 @@
 [project]
 name = "colcon2deb"
-version = "0.3.2"
+version = "0.3.3"
 description = "Build Debian packages for Autoware in isolated Docker containers"
 authors = [
     { name = "Autoware Foundation", email = "contact@autoware.org" }
