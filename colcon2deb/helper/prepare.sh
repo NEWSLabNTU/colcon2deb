@@ -29,8 +29,16 @@ export -f make_pkg_work_dir
 # This will be populated by copy-src.sh later
 if [ -d "$colcon_work_dir/src" ]; then
     cd "$colcon_work_dir"
-    # Directory creation is I/O bound, use fewer parallel jobs
-    njobs_io=$(( ( $(nproc) + 1 ) / 2 ))
+    # Directory creation is I/O bound, use half the configured parallelism
+    # Read parallel_jobs from config (via environment variable)
+    cpu_count=$(nproc)
+    config_parallel="${COLCON2DEB_PARALLEL_JOBS:-0}"
+    if [ "$config_parallel" -gt 0 ]; then
+        total_parallel="$config_parallel"
+    else
+        total_parallel="$cpu_count"
+    fi
+    njobs_io=$(( (total_parallel + 1) / 2 ))
 
     # Use GNU parallel instead of sem with exported functions
     # This avoids bash function export issues with /bin/sh

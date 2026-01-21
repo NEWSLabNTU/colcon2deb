@@ -12,9 +12,18 @@ if [ "$colcon_build" = y ]; then
         cmake_args="$cmake_args $COLCON2DEB_CMAKE_ARGS"
     fi
 
+    # Determine parallel workers from config or auto-detect
+    config_parallel="${COLCON2DEB_PARALLEL_JOBS:-0}"
+    if [ "$config_parallel" -gt 0 ]; then
+        parallel_workers="$config_parallel"
+    else
+        parallel_workers="$(nproc)"
+    fi
+
     # Build with output to both terminal and log file
     # Use stdbuf for unbuffered output so TUI shows progress in real-time
     stdbuf -oL colcon build --base-paths src \
+        --parallel-workers "$parallel_workers" \
         --cmake-args $cmake_args \
         --event-handlers console_direct+ \
         2>&1 | tee "$colcon_log"

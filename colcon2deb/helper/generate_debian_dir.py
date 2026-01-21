@@ -241,8 +241,12 @@ def main() -> int:
     ros2_build_types = ["ament_cmake", "ament_python", "ament_cmake_python", "cmake", "catkin"]
     all_package_names.extend(ros2_build_types)
 
-    # Use half the CPU cores for I/O-heavy operations
-    njobs = max(1, (os.cpu_count() or 1 + 1) // 2)
+    # Read parallel_jobs from config (via environment variable)
+    # For I/O-bound operations, use half the configured parallelism
+    cpu_count = os.cpu_count() or 1
+    config_parallel = int(os.environ.get("COLCON2DEB_PARALLEL_JOBS", 0))
+    total_parallel = config_parallel if config_parallel > 0 else cpu_count
+    njobs = max(1, total_parallel // 2)
 
     # Process packages in parallel
     results: list[DebianDirResult] = []
