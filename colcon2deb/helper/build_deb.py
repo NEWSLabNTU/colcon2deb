@@ -66,7 +66,7 @@ def get_package_list(colcon_work_dir: Path) -> list[tuple[str, Path]]:
         check=True,
     )
 
-    packages = []
+    packages: list[tuple[str, Path]] = []
     for line in result.stdout.strip().split("\n"):
         if not line:
             continue
@@ -278,10 +278,12 @@ def main() -> int:
     config_parallel = int(os.environ.get("COLCON2DEB_PARALLEL_JOBS", 0))
     total_parallel = config_parallel if config_parallel > 0 else cpu_count
 
-    njobs = max(1, int(total_parallel ** 0.5))
+    njobs = max(1, int(total_parallel**0.5))
     per_pkg_parallel = max(1, total_parallel // njobs)
 
-    print(f"Parallelism: {njobs} packages × {per_pkg_parallel} jobs/pkg = {njobs * per_pkg_parallel} total (config: {config_parallel}, CPU: {cpu_count})")
+    print(
+        f"Parallelism: {njobs} packages × {per_pkg_parallel} jobs/pkg = {njobs * per_pkg_parallel} total (config: {config_parallel}, CPU: {cpu_count})"
+    )
 
     # Set environment variable for build_single_package to use
     os.environ["COLCON2DEB_PER_PKG_PARALLEL"] = str(per_pkg_parallel)

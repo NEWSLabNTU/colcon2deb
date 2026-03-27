@@ -6,8 +6,6 @@ Provides a Claude Code-like interface showing:
 - Minimal, non-flooding terminal output
 """
 
-from __future__ import annotations
-
 import threading
 import time
 from collections import deque
@@ -15,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from rich.console import Console, Group
+from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
@@ -49,7 +47,7 @@ class Phase:
     name: str
     description: str
     status: PhaseStatus = PhaseStatus.PENDING
-    packages: list[Package] = field(default_factory=list)
+    packages: list["Package"] = field(default_factory=lambda: list["Package"]())
     start_time: float | None = None
     end_time: float | None = None
 
@@ -86,8 +84,8 @@ class BuildUI:
     """
 
     console: Console = field(default_factory=Console)
-    phases: dict[str, Phase] = field(default_factory=dict)
-    phase_order: list[str] = field(default_factory=list)
+    phases: dict[str, Phase] = field(default_factory=lambda: dict[str, Phase]())
+    phase_order: list[str] = field(default_factory=lambda: list[str]())
     current_phase: str | None = None
     log_lines: deque[str] = field(default_factory=lambda: deque(maxlen=15))
     log_file: Path | None = None
@@ -274,7 +272,7 @@ class BuildUI:
 
     def _render(self) -> Group:
         """Render the complete UI."""
-        renderables = []
+        renderables: list[RenderableType] = []
 
         # Phase list
         phases_text = self._render_phases()

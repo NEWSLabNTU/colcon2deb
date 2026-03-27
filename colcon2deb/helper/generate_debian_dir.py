@@ -18,11 +18,11 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 # Import rosdeb_bloom library (pip installed from /rosdeb-bloom in container)
-from rosdeb_bloom.api import generate_debian
-from rosdeb_bloom.logging import disable_ANSI_colors
+from rosdeb_bloom.api import generate_debian  # type: ignore[import-untyped]
+from rosdeb_bloom.logging import disable_ANSI_colors  # type: ignore[import-untyped]
 
 
 class DebianDirStatus(Enum):
@@ -67,7 +67,7 @@ def get_package_list(colcon_work_dir: Path) -> list[tuple[str, Path]]:
         check=True,
     )
 
-    packages = []
+    packages: list[tuple[str, Path]] = []
     for line in result.stdout.strip().split("\n"):
         if not line:
             continue
@@ -149,7 +149,7 @@ def copy_or_create_debian_dir(
             home_config.mkdir(parents=True, exist_ok=True)
 
             # Generate debian files using the library API
-            result = generate_debian(
+            bloom_result: Any = generate_debian(  # pyright: ignore[reportUnknownVariableType]
                 package_path=pkg_dir,
                 ros_distro=ros_distro,
                 install_prefix=ros_install_prefix,
@@ -157,17 +157,19 @@ def copy_or_create_debian_dir(
                 package_suffix=package_suffix,
             )
 
-            if not result.success:
-                err_file.write_text(result.error or "Unknown error")
+            if not cast(bool, bloom_result.success):  # pyright: ignore[reportUnknownMemberType]
+                error_msg = cast(str, bloom_result.error) or "Unknown error"  # pyright: ignore[reportUnknownMemberType]
+                err_file.write_text(error_msg)
                 return DebianDirResult(
                     package=pkg_name,
                     pkg_dir=pkg_dir,
                     status=DebianDirStatus.FAILED,
                     method="bloom",
-                    error=f"rosdeb_bloom failed: {result.error}",
+                    error=f"rosdeb_bloom failed: {error_msg}",
                 )
 
-            out_file.write_text(f"Generated debian directory at {result.debian_dir}\n")
+            debian_dir_path = cast(str, bloom_result.debian_dir)  # pyright: ignore[reportUnknownMemberType]
+            out_file.write_text(f"Generated debian directory at {debian_dir_path}\n")
 
             # The library generates debian/ in pkg_dir, copy to cache (config_dir) and work dir
             generated_debian_dir = pkg_dir / "debian"

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Docker run script replacement for make run with enhanced functionality."""
 
+from __future__ import annotations
+
 import argparse
 import atexit
 import hashlib
@@ -18,6 +20,8 @@ import urllib.error
 import urllib.request
 from importlib.metadata import version
 from pathlib import Path
+from types import FrameType
+from typing import Any
 
 __version__ = version("colcon2deb")
 
@@ -35,7 +39,7 @@ _interrupt_count = 0
 _interrupt_lock = threading.Lock()
 
 
-def stop_container(container_id, force=False):
+def stop_container(container_id: str, force: bool = False) -> None:
     """Stop a Docker container."""
     if not container_id:
         return
@@ -59,7 +63,7 @@ def stop_container(container_id, force=False):
         print(f"Warning: Failed to stop container: {e}", file=sys.stderr)
 
 
-def signal_handler(signum, frame):
+def signal_handler(signum: int, frame: FrameType | None) -> None:
     """Handle interrupt signals with escalating force."""
     global _interrupt_count, _container_id
 
@@ -84,7 +88,7 @@ def signal_handler(signum, frame):
         sys.exit(130)  # 128 + SIGINT
 
 
-def run_container_with_signal_handling(docker_cmd, image_name):
+def run_container_with_signal_handling(docker_cmd: list[str], image_name: str) -> int:
     """Run a Docker container with proper signal handling."""
     global _container_id, _interrupt_count
 
@@ -140,7 +144,7 @@ def run_container_with_signal_handling(docker_cmd, image_name):
         _container_id = None
 
 
-def run_container_with_tui(docker_cmd, image_name, output_dir):
+def run_container_with_tui(docker_cmd: list[str], image_name: str, output_dir: Path) -> int:
     """Run a Docker container with TUI display.
 
     Args:
@@ -177,7 +181,7 @@ def run_container_with_tui(docker_cmd, image_name, output_dir):
     if event_file.exists():
         event_file.unlink()
 
-    def handle_event(event: dict) -> None:
+    def handle_event(event: dict[str, Any]) -> None:
         """Process an event and update UI."""
         etype = event.get("type", "")
         if etype == "phase_start":
@@ -271,11 +275,12 @@ def run_container_with_tui(docker_cmd, image_name, output_dir):
 
         # Read container output and add to log panel
         with ui.live_context():
-            for line in process.stdout:
-                # Strip ANSI escape codes before displaying
-                clean_line = _ANSI_ESCAPE_RE.sub("", line.rstrip())
-                ui.update_log(clean_line)
-                ui.refresh()
+            if process.stdout:
+                for line in process.stdout:
+                    # Strip ANSI escape codes before displaying
+                    clean_line = _ANSI_ESCAPE_RE.sub("", line.rstrip())
+                    ui.update_log(clean_line)
+                    ui.refresh()
 
             process.wait()
 
@@ -294,7 +299,21 @@ def run_container_with_tui(docker_cmd, image_name, output_dir):
         _container_id = None
 
 
-def run_command(cmd, check=True, log_file=None, stream_output=False):
+class _RunCommandResult:
+    """Result-like object for streamed command output."""
+
+    def __init__(self, returncode: int, stdout: str, stderr: str) -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def run_command(
+    cmd: list[str],
+    check: bool = True,
+    log_file: Path | None = None,
+    stream_output: bool = False,
+) -> subprocess.CompletedProcess[str] | _RunCommandResult:
     """Run a shell command and return the result.
 
     Args:
@@ -319,16 +338,17 @@ def run_command(cmd, check=True, log_file=None, stream_output=False):
                 bufsize=1,
             )
 
-            stdout_lines = []
-            for line in process.stdout:
-                line = line.rstrip()
-                stdout_lines.append(line)
-                # Filter and display Docker build progress
-                if line:
-                    print(f"  {line}")
-                if log_handle:
-                    log_handle.write(line + "\n")
-                    log_handle.flush()
+            stdout_lines: list[str] = []
+            if process.stdout:
+                for line in process.stdout:
+                    line = line.rstrip()
+                    stdout_lines.append(line)
+                    # Filter and display Docker build progress
+                    if line:
+                        print(f"  {line}")
+                    if log_handle:
+                        log_handle.write(line + "\n")
+                        log_handle.flush()
 
             process.wait()
 
@@ -341,14 +361,7 @@ def run_command(cmd, check=True, log_file=None, stream_output=False):
             else:
                 print("  ✓ Done")
 
-            # Return a result-like object
-            class Result:
-                def __init__(self, returncode, stdout, stderr):
-                    self.returncode = returncode
-                    self.stdout = stdout
-                    self.stderr = stderr
-
-            return Result(process.returncode, "\n".join(stdout_lines), "")
+            return _RunCommandResult(process.returncode, "\n".join(stdout_lines), "")
         finally:
             if log_handle:
                 log_handle.close()
@@ -387,8 +400,10 @@ def run_command(cmd, check=True, log_file=None, stream_output=False):
         return result
 
 
-def download_dockerfile(url, cache_dir=None):
+def download_dockerfile(url: str, cache_dir: str | Path | None = None) -> Path:
     """Download Dockerfile from HTTP/HTTPS URL."""
+    cached_file: Path | None = None
+
     # Create cache directory if specified
     if cache_dir:
         cache_dir = Path(cache_dir)
@@ -444,8 +459,12 @@ def download_dockerfile(url, cache_dir=None):
 
 
 def build_image_from_dockerfile(
-    dockerfile_path, image_name, build_context=None, log_dir=None, platform=None
-):
+    dockerfile_path: str | Path,
+    image_name: str,
+    build_context: str | Path | None = None,
+    log_dir: str | Path | None = None,
+    platform: str | None = None,
+) -> str:
     """Build Docker image from Dockerfile."""
     dockerfile_path = Path(dockerfile_path).resolve()
     if not dockerfile_path.exists():
@@ -488,7 +507,7 @@ def build_image_from_dockerfile(
     return image_name
 
 
-def load_config(config_path):
+def load_config(config_path: str | Path) -> dict[str, Any]:
     """Load configuration from YAML file."""
     config_path = Path(config_path).resolve()
     if not config_path.exists():

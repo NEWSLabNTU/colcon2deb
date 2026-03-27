@@ -57,7 +57,7 @@ class SimpleBuildUI:
             print(f"○ {self.phases[phase_id]} (skipped)")
 
 
-def run_script(script_name: str, script_dir: Path, env: dict) -> bool:
+def run_script(script_name: str, script_dir: Path, env: dict[str, str]) -> bool:
     """Run a shell script from the helper directory."""
     script_path = script_dir / script_name
     # Explicitly inherit stdout/stderr for proper TUI display
@@ -73,7 +73,7 @@ def run_script(script_name: str, script_dir: Path, env: dict) -> bool:
     return result.returncode == 0
 
 
-def run_python_script(script_name: str, script_dir: Path, env: dict) -> bool:
+def run_python_script(script_name: str, script_dir: Path, env: dict[str, str]) -> bool:
     """Run a Python script from the helper directory."""
     script_path = script_dir / script_name
     # Explicitly inherit stdout/stderr for proper TUI display
