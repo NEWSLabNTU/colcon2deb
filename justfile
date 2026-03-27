@@ -71,6 +71,7 @@ test:
 lint:
     uv run ruff check colcon2deb/
     uv run ruff format --check colcon2deb/
+    uv run pyright colcon2deb/
 
 # Auto-fix lint issues
 lint-fix:
