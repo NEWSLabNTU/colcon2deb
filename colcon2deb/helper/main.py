@@ -413,7 +413,7 @@ def main() -> int:
         if setup_bash.exists():
             # Capture environment changes from sourcing setup.bash
             result = subprocess.run(
-                ["bash", "-c", f"source {setup_bash} && env"],
+                ["bash", "-c", 'source "$1" && env', "_", str(setup_bash)],
                 capture_output=True,
                 text=True,
             )

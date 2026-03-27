@@ -4,12 +4,10 @@
 from __future__ import annotations
 
 import argparse
-import atexit
 import hashlib
 import json
 import os
 import re
-import shutil
 import signal
 import subprocess
 import sys
@@ -65,26 +63,26 @@ def stop_container(container_id: str, force: bool = False) -> None:
 
 def signal_handler(signum: int, frame: FrameType | None) -> None:
     """Handle interrupt signals with escalating force."""
-    global _interrupt_count, _container_id
+    global _interrupt_count
 
     with _interrupt_lock:
         _interrupt_count += 1
         count = _interrupt_count
+        container = _container_id
 
     if count == 1:
         print("\n\nReceived interrupt signal. Stopping container gracefully...")
         print("Press Ctrl+C again to force stop, or 3 times to force kill immediately.")
-        # Try to find and stop the container
-        if _container_id:
-            stop_container(_container_id, force=False)
+        if container:
+            stop_container(container, force=False)
     elif count == 2:
         print("\n\nReceived second interrupt. Force stopping...")
-        if _container_id:
-            stop_container(_container_id, force=True)
+        if container:
+            stop_container(container, force=True)
     else:
         print("\n\nReceived third interrupt. Forcing immediate exit...")
-        if _container_id:
-            stop_container(_container_id, force=True)
+        if container:
+            stop_container(container, force=True)
         sys.exit(130)  # 128 + SIGINT
 
 
@@ -93,7 +91,8 @@ def run_container_with_signal_handling(docker_cmd: list[str], image_name: str) -
     global _container_id, _interrupt_count
 
     # Reset interrupt count
-    _interrupt_count = 0
+    with _interrupt_lock:
+        _interrupt_count = 0
 
     # Set up signal handler
     original_handler = signal.signal(signal.SIGINT, signal_handler)
@@ -122,7 +121,8 @@ def run_container_with_signal_handling(docker_cmd: list[str], image_name: str) -
                     timeout=5,
                 )
                 if result.returncode == 0 and result.stdout.strip():
-                    _container_id = result.stdout.strip().split("\n")[0]
+                    with _interrupt_lock:
+                        _container_id = result.stdout.strip().split("\n")[0]
                     break
             except Exception:
                 pass
@@ -141,7 +141,8 @@ def run_container_with_signal_handling(docker_cmd: list[str], image_name: str) -
     finally:
         # Restore original signal handler
         signal.signal(signal.SIGINT, original_handler)
-        _container_id = None
+        with _interrupt_lock:
+            _container_id = None
 
 
 def run_container_with_tui(docker_cmd: list[str], image_name: str, output_dir: Path) -> int:
@@ -158,7 +159,8 @@ def run_container_with_tui(docker_cmd: list[str], image_name: str, output_dir: P
     global _container_id, _interrupt_count
 
     # Reset interrupt count
-    _interrupt_count = 0
+    with _interrupt_lock:
+        _interrupt_count = 0
 
     # Set up signal handler
     original_handler = signal.signal(signal.SIGINT, signal_handler)
@@ -265,7 +267,8 @@ def run_container_with_tui(docker_cmd: list[str], image_name: str, output_dir: P
                     timeout=5,
                 )
                 if result.returncode == 0 and result.stdout.strip():
-                    _container_id = result.stdout.strip().split("\n")[0]
+                    with _interrupt_lock:
+                        _container_id = result.stdout.strip().split("\n")[0]
                     break
             except Exception:
                 pass
@@ -296,7 +299,8 @@ def run_container_with_tui(docker_cmd: list[str], image_name: str, output_dir: P
     finally:
         stop_event.set()
         signal.signal(signal.SIGINT, original_handler)
-        _container_id = None
+        with _interrupt_lock:
+            _container_id = None
 
 
 class _RunCommandResult:
@@ -410,7 +414,7 @@ def download_dockerfile(url: str, cache_dir: str | Path | None = None) -> Path:
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate cache filename based on URL hash
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        url_hash = hashlib.sha256(url.encode()).hexdigest()[:12]
         cached_file = cache_dir / f"Dockerfile.{url_hash}"
 
         # Check if cached file exists
@@ -656,29 +660,19 @@ def main():
             dockerfile_path = download_dockerfile(dockerfile_value, cache_dir)
 
             # For remote Dockerfiles, use a minimal build context
-            # Create a temporary directory with just the Dockerfile
-            temp_context = tempfile.mkdtemp(prefix="colcon2deb_context_")
+            with tempfile.TemporaryDirectory(prefix="colcon2deb_context_") as temp_context:
+                print("\nPreparing build context...")
 
-            print("\nPreparing build context...")
-            print(f"  Temporary context: {temp_context}")
+                temp_dockerfile = Path(temp_context) / "Dockerfile"
+                temp_dockerfile.write_bytes(dockerfile_path.read_bytes())
 
-            # Register cleanup function to remove temp directory
-            def cleanup_temp_context():
-                if Path(temp_context).exists():
-                    shutil.rmtree(temp_context, ignore_errors=True)
-
-            atexit.register(cleanup_temp_context)
-
-            temp_dockerfile = Path(temp_context) / "Dockerfile"
-            temp_dockerfile.write_bytes(dockerfile_path.read_bytes())
-
-            image_name = build_image_from_dockerfile(
-                temp_dockerfile,
-                docker_config.get("image_name", "colcon2deb_builder"),
-                build_context=temp_context,
-                log_dir=log_logs_dir,
-                platform=docker_config.get("platform"),
-            )
+                image_name = build_image_from_dockerfile(
+                    temp_dockerfile,
+                    docker_config.get("image_name", "colcon2deb_builder"),
+                    build_context=temp_context,
+                    log_dir=log_logs_dir,
+                    platform=docker_config.get("platform"),
+                )
         else:
             # Local Dockerfile path
             dockerfile_path = Path(dockerfile_value)
