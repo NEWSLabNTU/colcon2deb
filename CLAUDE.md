@@ -46,14 +46,23 @@ colcon2deb --help
 
 ### Testing and Linting
 ```bash
-# Run tests
+# Run unit tests (fast, no Docker)
 just test
 
-# Run lint and format checks
-just lint
+# Run all tests including integration (requires Docker)
+just test-all
+
+# Run integration tests only (requires Docker)
+just test-integ
+
+# Run lint, format, and type checks
+just check
+
+# Run all CI checks (lint + unit tests)
+just ci
 
 # Auto-fix lint issues
-just lint-fix
+just check-fix
 
 # Format code
 just format

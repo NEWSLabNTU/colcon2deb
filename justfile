@@ -63,19 +63,30 @@ build-example example:
         --workspace source \
         --output build
 
-# Run tests
+# Run unit tests (fast, no Docker)
 test:
     uv run pytest tests/ -v
 
-# Run lint and format checks
-lint:
+# Run all tests including integration (requires Docker)
+test-all:
+    uv run pytest tests/ -v -m '' --timeout=120
+
+# Run integration tests only (requires Docker)
+test-integ:
+    uv run pytest tests/ -v -m integration --timeout=120 || test $? -eq 5
+
+# Run lint, format, and type checks
+check:
     uv run ruff check colcon2deb/
     uv run ruff format --check colcon2deb/
     uv run pyright colcon2deb/
 
 # Auto-fix lint issues
-lint-fix:
+check-fix:
     uv run ruff check --fix colcon2deb/
+
+# Run all CI checks (lint + unit tests)
+ci: check test
 
 # Format code
 format:

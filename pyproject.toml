@@ -28,6 +28,7 @@ dev = [
     "build>=1.3.0",
     "ruff>=0.8.0",
     "pyright>=1.1.408",
+    "pytest-timeout>=2.4.0",
 ]
 
 [tool.ruff]
@@ -111,3 +112,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+norecursedirs = ["fixtures"]
+markers = [
+    "integration: requires Docker and builds real workspaces (slow)",
+    "network: requires network access (may be flaky)",
+]
+timeout = 10
+addopts = "-m 'not integration'"
