@@ -107,7 +107,9 @@ echo "Installing rosdeb-bloom and rich..."
 pip install --quiet /rosdeb-bloom rich
 
 # Create a script to run as the builder user
-cat > /tmp/build-as-user.sh << 'USERSCRIPT'
+_entry_tmpdir=$(mktemp -d)
+chmod 755 "$_entry_tmpdir"
+cat > "$_entry_tmpdir/build-as-user.sh" << 'USERSCRIPT'
 #!/usr/bin/env bash
 set -e
 
@@ -132,7 +134,7 @@ rosdep update
 # Run the main build script
 exec python3 "$script_dir/main.py" --workspace=/workspace --output="$output" --log-dir="$log_dir" $skip_opts
 USERSCRIPT
-chmod +x /tmp/build-as-user.sh
+chmod +x "$_entry_tmpdir/build-as-user.sh"
 
 # Run everything as the host user so files are owned correctly
-exec su "$name" -c "/tmp/build-as-user.sh '$script_dir' '$output' '$log_dir' $skip_opts"
+exec su "$name" -c "'$_entry_tmpdir/build-as-user.sh' '$script_dir' '$output' '$log_dir' $skip_opts"

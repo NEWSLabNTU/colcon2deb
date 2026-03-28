@@ -16,7 +16,7 @@ run_privileged apt update > "$log_logs_dir/phase3_apt_update.log" 2>&1 || {
 # ...` and execute them.
 if [ "$rosdep_install" = y ]; then
     # Generate the install script and execute it
-    install_script=$(mktemp /tmp/install_deps_XXXXXX.sh)
+    install_script=$(mktemp "${log_scripts_dir}/install_deps_XXXXXX.sh")
     ./generate-rosdep-commands.sh > "$install_script"
 
     # Save install script to log for reference

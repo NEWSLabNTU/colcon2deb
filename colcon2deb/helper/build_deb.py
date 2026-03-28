@@ -315,7 +315,11 @@ def main() -> int:
                 results.append(result)
 
                 if result.status == BuildStatus.FAILED:
-                    print(f"error: fail to build Debian package for {pkg_name}", file=sys.stderr)
+                    err_log = pkg_build_dir / pkg_name / "build.err"
+                    print(
+                        f"error: failed to build Debian package for {pkg_name} (see {err_log})",
+                        file=sys.stderr,
+                    )
             except Exception as e:
                 print(f"error: exception building {pkg_name}: {e}", file=sys.stderr)
                 results.append(

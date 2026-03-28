@@ -16,6 +16,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from importlib.metadata import version
 from pathlib import Path
 from types import FrameType
@@ -44,10 +45,13 @@ def stop_container(container_id: str, force: bool = False) -> None:
 
     try:
         if force:
-            print(f"\nForce killing container {container_id[:12]}...")
+            print(f"\nForce killing container {container_id[:12]}...", file=sys.stderr)
             subprocess.run(["docker", "kill", container_id], capture_output=True, timeout=10)
         else:
-            print(f"\nStopping container {container_id[:12]} (press Ctrl+C again to force)...")
+            print(
+                f"\nStopping container {container_id[:12]} (press Ctrl+C again to force)...",
+                file=sys.stderr,
+            )
             subprocess.run(
                 ["docker", "stop", "-t", "10", container_id], capture_output=True, timeout=20
             )
@@ -55,8 +59,8 @@ def stop_container(container_id: str, force: bool = False) -> None:
         # If stop times out, try kill
         try:
             subprocess.run(["docker", "kill", container_id], capture_output=True, timeout=5)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Warning: Failed to kill container {container_id[:12]}: {e}", file=sys.stderr)
     except Exception as e:
         print(f"Warning: Failed to stop container: {e}", file=sys.stderr)
 
@@ -71,67 +75,38 @@ def signal_handler(signum: int, frame: FrameType | None) -> None:
         container = _container_id
 
     if count == 1:
-        print("\n\nReceived interrupt signal. Stopping container gracefully...")
-        print("Press Ctrl+C again to force stop, or 3 times to force kill immediately.")
+        print("\n\nReceived interrupt signal. Stopping container gracefully...", file=sys.stderr)
+        print(
+            "Press Ctrl+C again to force stop, or 3 times to force kill immediately.",
+            file=sys.stderr,
+        )
         if container:
             stop_container(container, force=False)
     elif count == 2:
-        print("\n\nReceived second interrupt. Force stopping...")
+        print("\n\nReceived second interrupt. Force stopping...", file=sys.stderr)
         if container:
             stop_container(container, force=True)
     else:
-        print("\n\nReceived third interrupt. Forcing immediate exit...")
+        print("\n\nReceived third interrupt. Forcing immediate exit...", file=sys.stderr)
         if container:
             stop_container(container, force=True)
         sys.exit(130)  # 128 + SIGINT
 
 
-def run_container_with_signal_handling(docker_cmd: list[str], image_name: str) -> int:
+def run_container_with_signal_handling(docker_cmd: list[str], container_name: str) -> int:
     """Run a Docker container with proper signal handling."""
     global _container_id, _interrupt_count
 
     # Reset interrupt count
     with _interrupt_lock:
         _interrupt_count = 0
+        _container_id = container_name
 
     # Set up signal handler
     original_handler = signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        # Start the container
         process = subprocess.Popen(docker_cmd)
-
-        # Try to get container ID (with retries)
-        for _ in range(10):
-            time.sleep(0.5)
-            # Try to find container by image name
-            try:
-                result = subprocess.run(
-                    [
-                        "docker",
-                        "ps",
-                        "-q",
-                        "--filter",
-                        f"ancestor={image_name}",
-                        "--filter",
-                        "status=running",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    with _interrupt_lock:
-                        _container_id = result.stdout.strip().split("\n")[0]
-                    break
-            except Exception:
-                pass
-
-            # Check if process already finished
-            if process.poll() is not None:
-                break
-
-        # Wait for the process to complete
         return_code = process.wait()
         return return_code
 
@@ -139,18 +114,17 @@ def run_container_with_signal_handling(docker_cmd: list[str], image_name: str) -
         print(f"Error running container: {e}", file=sys.stderr)
         return 1
     finally:
-        # Restore original signal handler
         signal.signal(signal.SIGINT, original_handler)
         with _interrupt_lock:
             _container_id = None
 
 
-def run_container_with_tui(docker_cmd: list[str], image_name: str, output_dir: Path) -> int:
+def run_container_with_tui(docker_cmd: list[str], container_name: str, output_dir: Path) -> int:
     """Run a Docker container with TUI display.
 
     Args:
         docker_cmd: Docker command to run
-        image_name: Name of the Docker image (for finding container ID)
+        container_name: Unique container name (used for signal-based cleanup)
         output_dir: Output directory where events file will be written
 
     Returns:
@@ -161,6 +135,7 @@ def run_container_with_tui(docker_cmd: list[str], image_name: str, output_dir: P
     # Reset interrupt count
     with _interrupt_lock:
         _interrupt_count = 0
+        _container_id = container_name
 
     # Set up signal handler
     original_handler = signal.signal(signal.SIGINT, signal_handler)
@@ -248,34 +223,6 @@ def run_container_with_tui(docker_cmd: list[str], image_name: str, output_dir: P
             bufsize=1,  # Line buffered
         )
 
-        # Try to get container ID (with retries)
-        for _ in range(10):
-            time.sleep(0.5)
-            try:
-                result = subprocess.run(
-                    [
-                        "docker",
-                        "ps",
-                        "-q",
-                        "--filter",
-                        f"ancestor={image_name}",
-                        "--filter",
-                        "status=running",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    with _interrupt_lock:
-                        _container_id = result.stdout.strip().split("\n")[0]
-                    break
-            except Exception:
-                pass
-
-            if process.poll() is not None:
-                break
-
         # Read container output and add to log panel
         with ui.live_context():
             if process.stdout:
@@ -328,8 +275,10 @@ def run_command(
     """
     if stream_output:
         # Stream output in real-time while also logging
-        log_handle = open(log_file, "w") if log_file else None
-        try:
+        import contextlib
+
+        with contextlib.ExitStack() as stack:
+            log_handle = stack.enter_context(open(log_file, "w")) if log_file else None
             if log_handle:
                 log_handle.write(f"Command: {' '.join(cmd)}\n")
                 log_handle.write("=" * 80 + "\n\n")
@@ -347,7 +296,6 @@ def run_command(
                 for line in process.stdout:
                     line = line.rstrip()
                     stdout_lines.append(line)
-                    # Filter and display Docker build progress
                     if line:
                         print(f"  {line}")
                     if log_handle:
@@ -366,9 +314,6 @@ def run_command(
                 print("  ✓ Done")
 
             return _RunCommandResult(process.returncode, "\n".join(stdout_lines), "")
-        finally:
-            if log_handle:
-                log_handle.close()
     elif log_file:
         # Run without check so we can log output before raising exception
         result = subprocess.run(cmd, check=False, capture_output=True, text=True)
@@ -431,7 +376,7 @@ def download_dockerfile(url: str, cache_dir: str | Path | None = None) -> Path:
         content_str = content.decode("utf-8", errors="ignore")
         if not ("FROM" in content_str or "ARG" in content_str):
             print(
-                "  ⚠️  Warning: Downloaded content may not be a valid Dockerfile",
+                "  Warning: Downloaded content may not be a valid Dockerfile",
                 file=sys.stderr,
             )
 
@@ -450,15 +395,15 @@ def download_dockerfile(url: str, cache_dir: str | Path | None = None) -> Path:
                 return temp_path
 
     except urllib.error.HTTPError as e:
-        print(f"\n❌ HTTP Error {e.code}: {e.reason}", file=sys.stderr)
-        print(f"   URL: {url}", file=sys.stderr)
+        print(f"\n  ✗ HTTP Error {e.code}: {e.reason}", file=sys.stderr)
+        print(f"    URL: {url}", file=sys.stderr)
         sys.exit(1)
     except urllib.error.URLError as e:
-        print(f"\n❌ Network Error: {e.reason}", file=sys.stderr)
-        print("   Please check your internet connection and the URL", file=sys.stderr)
+        print(f"\n  ✗ Network Error: {e.reason}", file=sys.stderr)
+        print("    Please check your internet connection and the URL", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}", file=sys.stderr)
+        print(f"\n  ✗ Download failed: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -627,10 +572,11 @@ def main():
     log_base_dir = output_dir / "logs"
     log_base_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create timestamped log directory
+    # Create timestamped log directory (with microseconds to avoid collisions)
     from datetime import datetime
 
-    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    now = datetime.now()
+    log_timestamp = now.strftime("%Y-%m-%d_%H-%M-%S.%f")
     log_dir = log_base_dir / log_timestamp
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -772,11 +718,16 @@ def main():
         print(f"Expected at: {rosdeb_bloom_dir}", file=sys.stderr)
         sys.exit(1)
 
+    # Generate unique container name for this build run
+    run_id = uuid.uuid4().hex[:8]
+    container_name = f"colcon2deb-{run_id}"
+
     # Prepare Docker run command
     docker_cmd = [
         "docker",
         "run",
         "--rm",
+        f"--name={container_name}",
         "--net=host",
         "-e",
         f"DISPLAY={os.environ.get('DISPLAY', ':0')}",
@@ -835,7 +786,7 @@ def main():
 
     # Run the container with TUI display
     print()  # Blank line before TUI
-    return_code = run_container_with_tui(docker_cmd, image_name, output_dir)
+    return_code = run_container_with_tui(docker_cmd, container_name, output_dir)
 
     if return_code != 0:
         print(f"\nContainer exited with code {return_code}", file=sys.stderr)
