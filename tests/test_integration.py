@@ -1,0 +1,248 @@
+"""Integration tests that build real ROS workspaces using Docker.
+
+These tests exercise the full colcon2deb pipeline end-to-end:
+  Host -> Docker container -> colcon build -> debian generation -> .deb output
+
+Test cases are derived from real Autoware 1.5.0/amd64 production builds.
+
+Requires: Docker daemon running, ros:humble image pullable.
+Run with: just test-integ  (or just test-all)
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import tempfile
+from pathlib import Path
+
+import pytest
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+WORKSPACE_DIR = FIXTURES_DIR / "workspace"
+CONFIGS_DIR = FIXTURES_DIR / "configs"
+
+# Deb naming: ros-{distro}-{name}[-{suffix}]_{ver}-{rev}_{arch}.deb
+DEB_RE = re.compile(
+    r"^ros-(?P<distro>[a-z]+)-(?P<name>[a-z0-9][-a-z0-9]*?)"
+    r"(?:-(?P<suffix>\d[-\d]+\d))?"
+    r"_(?P<version>\d+\.\d+\.\d+)-(?P<revision>\d+[a-z]+)_(?P<arch>[a-z0-9]+)\.deb$"
+)
+
+
+def _docker_available() -> bool:
+    """Check if Docker daemon is accessible."""
+    try:
+        r = subprocess.run(["docker", "info"], capture_output=True, timeout=10)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(not _docker_available(), reason="Docker not available"),
+]
+
+
+def _prepare_config(config_name: str, output_dir: Path) -> Path:
+    """Rewrite a fixture config to use absolute paths and the given output dir."""
+    config_src = CONFIGS_DIR / config_name
+    config_dst = output_dir / "config.yaml"
+
+    config_text = config_src.read_text()
+    config_text = config_text.replace(
+        "dockerfile: ../Dockerfile",
+        f"dockerfile: {FIXTURES_DIR / 'Dockerfile'}",
+    )
+    config_text = config_text.replace(
+        "directory: ./build",
+        f"directory: {output_dir / 'build'}",
+    )
+    config_text = config_text.replace(
+        "directory: ./debian-overrides",
+        f"directory: {output_dir / 'debian-overrides'}",
+    )
+    config_dst.write_text(config_text)
+    (output_dir / "debian-overrides").mkdir(exist_ok=True)
+    return config_dst
+
+
+def _run_build(config_name: str) -> Path:
+    """Run colcon2deb with a fixture config and return the build output dir."""
+    tmp = Path(tempfile.mkdtemp(prefix="colcon2deb-integ-"))
+    config = _prepare_config(config_name, tmp)
+
+    cmd = [
+        "uv", "run", "colcon2deb",
+        "--workspace", str(WORKSPACE_DIR),
+        "--config", str(config),
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=600,
+        cwd=Path(__file__).parent.parent,
+    )
+    if result.returncode != 0:
+        print("STDOUT:", result.stdout[-3000:] if result.stdout else "")
+        print("STDERR:", result.stderr[-2000:] if result.stderr else "")
+        pytest.fail(f"colcon2deb failed with exit code {result.returncode}")
+    return tmp / "build"
+
+
+# ---------------------------------------------------------------------------
+# Fixtures: one build per test class (expensive, runs Docker)
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="class")
+def default_build() -> Path:
+    """Build with default /opt/ros/humble prefix, no suffix. Runs once per class."""
+    return _run_build("integ_default_prefix.yaml")
+
+
+@pytest.fixture(scope="class")
+def custom_build() -> Path:
+    """Build with /opt/testproject/1.0 prefix and 1-0-0 suffix. Runs once per class."""
+    return _run_build("integ_custom_prefix.yaml")
+
+
+# ---------------------------------------------------------------------------
+# Test case 1: Default prefix (/opt/ros/humble), no suffix
+# Mirrors the simplest real-world usage
+# ---------------------------------------------------------------------------
+class TestDefaultPrefixBuild:
+    """Build with default /opt/ros/humble prefix, no package suffix."""
+
+    def test_output_directory_structure(self, default_build: Path) -> None:
+        assert (default_build / "debs").is_dir()
+        assert (default_build / "packaging").is_dir()
+        assert (default_build / "workspace").is_dir()
+        assert (default_build / "logs").is_dir()
+
+    def test_debs_produced(self, default_build: Path) -> None:
+        """Both test_cpp_pkg and test_py_pkg should produce .deb files."""
+        debs = list((default_build / "debs").glob("*.deb"))
+        assert len(debs) == 2, f"Expected 2 .deb files, got: {[d.name for d in debs]}"
+
+    def test_cpp_deb_naming(self, default_build: Path) -> None:
+        debs = list((default_build / "debs").glob("ros-humble-test-cpp-pkg_*.deb"))
+        assert len(debs) == 1, f"Expected 1 C++ .deb, got: {[d.name for d in debs]}"
+        m = DEB_RE.match(debs[0].name)
+        assert m is not None, f"Bad name: {debs[0].name}"
+        assert m.group("distro") == "humble"
+        assert m.group("name") == "test-cpp-pkg"
+        assert m.group("version") == "1.0.0"
+        assert m.group("suffix") is None
+
+    def test_py_deb_naming(self, default_build: Path) -> None:
+        debs = list((default_build / "debs").glob("ros-humble-test-py-pkg_*.deb"))
+        assert len(debs) == 1
+        m = DEB_RE.match(debs[0].name)
+        assert m is not None, f"Bad name: {debs[0].name}"
+        assert m.group("name") == "test-py-pkg"
+        assert m.group("suffix") is None
+
+    def test_deb_not_empty(self, default_build: Path) -> None:
+        for deb in (default_build / "debs").glob("*.deb"):
+            assert deb.stat().st_size > 1000, f"{deb.name} is suspiciously small"
+
+    def test_log_reports(self, default_build: Path) -> None:
+        latest = default_build / "logs" / "latest"
+        assert latest.exists(), "logs/latest symlink missing"
+        reports = latest / "reports"
+        assert (reports / "successful.txt").exists()
+        assert (reports / "failed.txt").exists()
+        assert (reports / "packages.txt").exists()
+
+    def test_all_packages_successful(self, default_build: Path) -> None:
+        reports = default_build / "logs" / "latest" / "reports"
+        successful = (reports / "successful.txt").read_text().strip().split("\n")
+        failed = (reports / "failed.txt").read_text().strip()
+        assert "test_cpp_pkg" in successful
+        assert "test_py_pkg" in successful
+        assert failed == ""
+
+    def test_packaging_dirs(self, default_build: Path) -> None:
+        pkg = default_build / "packaging"
+        assert (pkg / "test_cpp_pkg" / "debian").is_dir()
+        assert (pkg / "test_py_pkg" / "debian").is_dir()
+
+    def test_debian_control_no_suffix(self, default_build: Path) -> None:
+        control = (
+            default_build / "packaging" / "test_cpp_pkg" / "debian" / "control"
+        ).read_text()
+        assert "Source: ros-humble-test-cpp-pkg" in control
+        assert "Package: ros-humble-test-cpp-pkg" in control
+        assert "ros-humble-test-cpp-pkg-1-0-0" not in control
+
+    def test_debian_rules_default_prefix(self, default_build: Path) -> None:
+        rules = (
+            default_build / "packaging" / "test_cpp_pkg" / "debian" / "rules"
+        ).read_text()
+        assert "/opt/ros/humble" in rules
+
+    def test_events_lifecycle(self, default_build: Path) -> None:
+        events_file = default_build / ".events.jsonl"
+        assert events_file.exists()
+        events = [json.loads(line) for line in events_file.read_text().strip().split("\n")]
+        types = [e["type"] for e in events]
+        assert "build_start" in types
+        assert "build_complete" in types
+        assert events[-1]["success"] is True
+
+
+# ---------------------------------------------------------------------------
+# Test case 2: Custom prefix + suffix
+# Mirrors Autoware 1.5.0: install_prefix=/opt/autoware/1.5.0, suffix=1-5-0
+# ---------------------------------------------------------------------------
+class TestCustomPrefixBuild:
+    """Build with custom prefix /opt/testproject/1.0 and suffix 1-0-0."""
+
+    def test_debs_produced(self, custom_build: Path) -> None:
+        debs = list((custom_build / "debs").glob("*.deb"))
+        assert len(debs) == 2
+
+    def test_cpp_deb_has_suffix(self, custom_build: Path) -> None:
+        debs = list((custom_build / "debs").glob("ros-humble-test-cpp-pkg-1-0-0_*.deb"))
+        assert len(debs) == 1, (
+            f"Expected suffixed .deb, got: {[d.name for d in (custom_build / 'debs').glob('*.deb')]}"
+        )
+        m = DEB_RE.match(debs[0].name)
+        assert m is not None
+        assert m.group("suffix") == "1-0-0"
+
+    def test_py_deb_has_suffix(self, custom_build: Path) -> None:
+        debs = list((custom_build / "debs").glob("ros-humble-test-py-pkg-1-0-0_*.deb"))
+        assert len(debs) == 1
+        m = DEB_RE.match(debs[0].name)
+        assert m is not None
+        assert m.group("suffix") == "1-0-0"
+
+    def test_debian_control_has_suffix(self, custom_build: Path) -> None:
+        control = (
+            custom_build / "packaging" / "test_cpp_pkg" / "debian" / "control"
+        ).read_text()
+        assert "Source: ros-humble-test-cpp-pkg-1-0-0" in control
+        assert "Package: ros-humble-test-cpp-pkg-1-0-0" in control
+
+    def test_debian_rules_custom_prefix(self, custom_build: Path) -> None:
+        rules = (
+            custom_build / "packaging" / "test_cpp_pkg" / "debian" / "rules"
+        ).read_text()
+        assert "/opt/testproject/1.0" in rules
+        assert 'CMAKE_INSTALL_PREFIX="/opt/ros/humble"' not in rules
+
+    def test_py_rules_custom_prefix(self, custom_build: Path) -> None:
+        rules = (
+            custom_build / "packaging" / "test_py_pkg" / "debian" / "rules"
+        ).read_text()
+        assert "/opt/testproject/1.0" in rules
+
+    def test_all_packages_successful(self, custom_build: Path) -> None:
+        reports = custom_build / "logs" / "latest" / "reports"
+        successful = (reports / "successful.txt").read_text().strip().split("\n")
+        failed = (reports / "failed.txt").read_text().strip()
+        assert len(successful) == 2
+        assert failed == ""

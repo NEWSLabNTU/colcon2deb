@@ -1,0 +1,16 @@
+version: 1
+
+docker:
+  dockerfile: ../Dockerfile
+  image_name: colcon2deb-test-default
+
+output:
+  directory: ./build
+
+packages:
+  directory: ./debian-overrides
+
+build:
+  ros_distro: humble
+  parallel_jobs: 2
+  install_prefix: /opt/ros/humble
