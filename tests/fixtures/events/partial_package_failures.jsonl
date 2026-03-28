@@ -1,0 +1,26 @@
+{"type": "build_start", "timestamp": "2026-03-28T14:00:00.000000", "phases": 8}
+{"type": "phase_start", "timestamp": "2026-03-28T14:00:00.100000", "phase": 1, "name": "Preparing working directories"}
+{"type": "phase_complete", "timestamp": "2026-03-28T14:00:01.000000", "phase": 1, "success": true}
+{"type": "phase_start", "timestamp": "2026-03-28T14:00:01.100000", "phase": 2, "name": "Copying source files"}
+{"type": "phase_complete", "timestamp": "2026-03-28T14:00:05.000000", "phase": 2, "success": true}
+{"type": "phase_start", "timestamp": "2026-03-28T14:00:05.100000", "phase": 3, "name": "Installing dependencies"}
+{"type": "phase_complete", "timestamp": "2026-03-28T14:00:30.000000", "phase": 3, "success": true}
+{"type": "phase_start", "timestamp": "2026-03-28T14:00:30.100000", "phase": 4, "name": "Compiling packages"}
+{"type": "phase_complete", "timestamp": "2026-03-28T14:05:00.000000", "phase": 4, "success": true}
+{"type": "phase_start", "timestamp": "2026-03-28T14:05:00.100000", "phase": 5, "name": "Generating rosdep list"}
+{"type": "phase_complete", "timestamp": "2026-03-28T14:05:10.000000", "phase": 5, "success": true}
+{"type": "phase_start", "timestamp": "2026-03-28T14:05:10.100000", "phase": 6, "name": "Creating package list"}
+{"type": "phase_complete", "timestamp": "2026-03-28T14:05:11.000000", "phase": 6, "success": true}
+{"type": "phase_start", "timestamp": "2026-03-28T14:05:11.100000", "phase": 7, "name": "Generating Debian metadata"}
+{"type": "package_start", "timestamp": "2026-03-28T14:05:11.200000", "phase": 7, "package": "autoware_lint_common"}
+{"type": "package_complete", "timestamp": "2026-03-28T14:05:12.000000", "phase": 7, "package": "autoware_lint_common", "success": true}
+{"type": "package_start", "timestamp": "2026-03-28T14:05:12.100000", "phase": 7, "package": "autoware_ndt_scan_matcher"}
+{"type": "package_complete", "timestamp": "2026-03-28T14:05:15.000000", "phase": 7, "package": "autoware_ndt_scan_matcher", "success": true}
+{"type": "phase_complete", "timestamp": "2026-03-28T14:05:15.100000", "phase": 7, "success": true}
+{"type": "phase_start", "timestamp": "2026-03-28T14:05:15.200000", "phase": 8, "name": "Building Debian packages"}
+{"type": "package_start", "timestamp": "2026-03-28T14:05:15.300000", "phase": 8, "package": "autoware_lint_common"}
+{"type": "package_complete", "timestamp": "2026-03-28T14:05:20.000000", "phase": 8, "package": "autoware_lint_common", "success": true}
+{"type": "package_start", "timestamp": "2026-03-28T14:05:20.100000", "phase": 8, "package": "autoware_ndt_scan_matcher"}
+{"type": "package_complete", "timestamp": "2026-03-28T14:05:30.000000", "phase": 8, "package": "autoware_ndt_scan_matcher", "success": false}
+{"type": "phase_complete", "timestamp": "2026-03-28T14:05:30.100000", "phase": 8, "success": true}
+{"type": "build_complete", "timestamp": "2026-03-28T14:05:30.200000", "success": true}

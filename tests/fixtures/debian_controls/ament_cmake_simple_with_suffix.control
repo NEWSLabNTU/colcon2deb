@@ -1,0 +1,12 @@
+Source: ros-humble-autoware-lint-common-1-5-0
+Section: misc
+Priority: optional
+Maintainer: Ryohsuke Mitsudome <ryohsuke.mitsudome@tier4.jp>
+Build-Depends: debhelper (>= 12.0.0), ros-humble-ament-cmake-core, ros-humble-ament-cmake-export-dependencies, ros-humble-ament-cmake-test
+Homepage:
+Standards-Version: 3.9.2
+
+Package: ros-humble-autoware-lint-common-1-5-0
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-humble-ament-cmake-copyright, ros-humble-ament-cmake-core, ros-humble-ament-cmake-cppcheck, ros-humble-ament-cmake-lint-cmake, ros-humble-ament-cmake-test, ros-humble-ament-cmake-xmllint
+Description: The list of commonly used linters in Autoware

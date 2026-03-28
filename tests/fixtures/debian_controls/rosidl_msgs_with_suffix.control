@@ -1,0 +1,12 @@
+Source: ros-humble-autoware-adapi-v1-msgs-1-5-0
+Section: misc
+Priority: optional
+Maintainer: Takagi, Isamu <isamu.takagi@tier4.jp>
+Build-Depends: debhelper (>= 12.0.0), ros-humble-ament-cmake-auto, ros-humble-ament-lint-auto <!nocheck>, ros-humble-ament-lint-common <!nocheck>, ros-humble-builtin-interfaces, ros-humble-geographic-msgs, ros-humble-geometry-msgs, ros-humble-rosidl-default-generators, ros-humble-shape-msgs, ros-humble-std-msgs, ros-humble-unique-identifier-msgs
+Homepage:
+Standards-Version: 3.9.2
+
+Package: ros-humble-autoware-adapi-v1-msgs-1-5-0
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-humble-builtin-interfaces, ros-humble-geographic-msgs, ros-humble-geometry-msgs, ros-humble-rosidl-default-runtime, ros-humble-shape-msgs, ros-humble-std-msgs, ros-humble-unique-identifier-msgs
+Description: The Autoware AD API interfaces

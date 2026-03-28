@@ -1,0 +1,10 @@
+version: 1
+
+docker:
+  image: ros:humble-ros-base
+
+output:
+  directory: ./build
+
+build:
+  ros_distro: humble

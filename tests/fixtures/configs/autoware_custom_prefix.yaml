@@ -1,0 +1,18 @@
+version: 1
+
+docker:
+  dockerfile: Dockerfile
+  image_name: autoware-1.5.0-amd64-builder
+
+output:
+  directory: ./build
+
+packages:
+  directory: ./debian-overrides
+
+build:
+  ros_distro: humble
+  parallel_jobs: 0
+  skip_tests: true
+  install_prefix: /opt/autoware/1.5.0
+  package_suffix: "1-5-0"

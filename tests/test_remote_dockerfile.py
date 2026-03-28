@@ -3,7 +3,10 @@
 
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
+
+import pytest
 
 # Add parent directory to path to import colcon2deb module
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -12,6 +15,17 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from colcon2deb.main import download_dockerfile
 
+
+def _network_available() -> bool:
+    """Check if we can reach GitHub."""
+    try:
+        urllib.request.urlopen("https://github.com", timeout=5)
+        return True
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(not _network_available(), reason="Network unavailable")
 def test_download():
     """Test downloading a Dockerfile from a URL."""
     # Test URL - using a known good Dockerfile

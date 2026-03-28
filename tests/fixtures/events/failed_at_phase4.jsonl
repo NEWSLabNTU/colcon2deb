@@ -1,0 +1,10 @@
+{"type": "build_start", "timestamp": "2026-03-28T10:00:00.000000", "phases": 8}
+{"type": "phase_start", "timestamp": "2026-03-28T10:00:00.100000", "phase": 1, "name": "Preparing working directories"}
+{"type": "phase_complete", "timestamp": "2026-03-28T10:00:01.000000", "phase": 1, "success": true}
+{"type": "phase_start", "timestamp": "2026-03-28T10:00:01.100000", "phase": 2, "name": "Copying source files"}
+{"type": "phase_complete", "timestamp": "2026-03-28T10:00:05.000000", "phase": 2, "success": true}
+{"type": "phase_start", "timestamp": "2026-03-28T10:00:05.100000", "phase": 3, "name": "Installing dependencies"}
+{"type": "phase_complete", "timestamp": "2026-03-28T10:00:30.000000", "phase": 3, "success": true}
+{"type": "phase_start", "timestamp": "2026-03-28T10:00:30.100000", "phase": 4, "name": "Compiling packages"}
+{"type": "phase_complete", "timestamp": "2026-03-28T10:05:00.000000", "phase": 4, "success": false}
+{"type": "build_complete", "timestamp": "2026-03-28T10:05:00.100000", "success": false}

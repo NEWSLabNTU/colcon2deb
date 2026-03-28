@@ -1,0 +1,11 @@
+docker:
+  image: ros:humble-ros-base
+
+output:
+  directory: ./build
+
+packages:
+  directory: ./debian-overrides
+
+build:
+  ros_distro: humble
