@@ -1,0 +1,118 @@
+"""Package fingerprinting for smart rebuild detection.
+
+Computes a per-package fingerprint from source files, debian overrides,
+build configuration, and toolchain version. If the fingerprint matches
+the stored one, the package can be skipped.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+
+
+def hash_tree(path: Path) -> str:
+    """Compute a deterministic SHA-256 hash of a directory tree.
+
+    Hashes (sorted_relative_path, file_content) pairs. Returns a fixed
+    hex string even for missing or empty directories.
+    """
+    h = hashlib.sha256()
+    if not path.is_dir():
+        return h.hexdigest()
+
+    entries: list[tuple[str, bytes]] = []
+    for f in sorted(path.rglob("*")):
+        if f.is_file():
+            rel = str(f.relative_to(path))
+            entries.append((rel, f.read_bytes()))
+
+    for rel, content in entries:
+        h.update(rel.encode())
+        h.update(content)
+
+    return h.hexdigest()
+
+
+def compute_fingerprint(
+    *,
+    pkg_name: str,
+    source_dir: Path,
+    overrides_dir: Path,
+    install_prefix: str,
+    package_suffix: str,
+    ros_distro: str,
+    colcon2deb_version: str,
+    docker_image_id: str,
+) -> dict[str, str]:
+    """Build a fingerprint dict for a package.
+
+    The 'fingerprint' key is a SHA-256 digest of all tracked inputs.
+    The remaining keys are stored for human-readable debugging.
+    """
+    source_hash = hash_tree(source_dir / pkg_name) if source_dir.is_dir() else hash_tree(source_dir)
+    overrides_hash = hash_tree(overrides_dir / pkg_name)
+
+    combined = hashlib.sha256()
+    for value in [
+        source_hash,
+        overrides_hash,
+        install_prefix,
+        package_suffix,
+        ros_distro,
+        colcon2deb_version,
+        docker_image_id,
+    ]:
+        combined.update(value.encode())
+
+    return {
+        "fingerprint": combined.hexdigest(),
+        "source_hash": source_hash,
+        "overrides_hash": overrides_hash,
+        "install_prefix": install_prefix,
+        "package_suffix": package_suffix,
+        "ros_distro": ros_distro,
+        "colcon2deb_version": colcon2deb_version,
+        "docker_image_id": docker_image_id,
+    }
+
+
+def read_fingerprint(path: Path) -> dict[str, str] | None:
+    """Read a stored fingerprint from a JSON file. Returns None if missing or invalid."""
+    try:
+        data = json.loads(path.read_text())
+        if isinstance(data, dict) and "fingerprint" in data:
+            return data  # type: ignore[return-value]
+        return None
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+def write_fingerprint(path: Path, fp: dict[str, str]) -> None:
+    """Write a fingerprint dict to a JSON file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(fp, indent=2) + "\n")
+
+
+def fingerprint_matches(stored: dict[str, str] | None, current: dict[str, str]) -> bool:
+    """Check if a stored fingerprint matches the current one."""
+    if stored is None:
+        return False
+    return stored.get("fingerprint") == current.get("fingerprint")
+
+
+def get_fingerprint_inputs_from_env() -> dict[str, str]:
+    """Read fingerprint input values from environment variables.
+
+    Used by generate_debian_dir.py and build_deb.py inside the container.
+    """
+    ros_distro = os.environ.get("ROS_DISTRO", "humble")
+    return {
+        "install_prefix": os.environ.get("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}"),
+        "package_suffix": os.environ.get("ROS_PACKAGE_SUFFIX", ""),
+        "ros_distro": ros_distro,
+        "colcon2deb_version": os.environ.get("COLCON2DEB_VERSION", "unknown"),
+        "docker_image_id": os.environ.get("COLCON2DEB_IMAGE_ID", "unknown"),
+    }

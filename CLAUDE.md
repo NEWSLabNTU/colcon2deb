@@ -9,6 +9,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **NEVER** use `/tmp/` or other system temporary directories for project-related temp files
 - This keeps temporary files organized and makes cleanup easier
 
+### Phase Documents
+- Work phases are tracked in `docs/phases/<number>-<name>.md`
+- Each document has work items and acceptance criteria with checkboxes
+- Update checkboxes as items are completed and tests pass
+
 ## Repository Overview
 
 This project builds Debian packages from ROS 2 colcon workspaces in isolated Docker containers.

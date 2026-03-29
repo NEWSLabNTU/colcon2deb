@@ -114,13 +114,22 @@ def build_single_package(
     colcon_install_path: str,
     package_suffix: str | None = None,
     log_packages_dir: Path | None = None,
+    fingerprint_inputs: dict[str, str] | None = None,
 ) -> BuildResult:
     """Build a single Debian package.
 
     Returns BuildResult with status and optional deb_file path.
     """
+    from fingerprint import (
+        compute_fingerprint,
+        fingerprint_matches,
+        read_fingerprint,
+        write_fingerprint,
+    )
+
     pkg_name_dashed = pkg_name.replace("_", "-")
     pkg_work_dir = pkg_build_dir / pkg_name
+    fp_file = pkg_work_dir / ".fingerprint.json"
 
     # Per-package log file: logs/packages/{pkg}/build_deb.log
     if log_packages_dir:
@@ -135,15 +144,34 @@ def build_single_package(
     log_file.write_text("")
 
     try:
-        # Check if package is already built
+        # Check fingerprint: skip only if inputs unchanged AND .deb exists
         existing_deb = find_deb_file(check_dir, ros_distro, pkg_name_dashed, package_suffix)
-        if existing_deb:
-            return BuildResult(
-                package=pkg_name,
-                pkg_dir=pkg_dir,
-                status=BuildStatus.SKIPPED,
-                deb_file=existing_deb,
+        if fingerprint_inputs is not None:
+            current_fp = compute_fingerprint(
+                pkg_name=pkg_name,
+                source_dir=pkg_dir.parent,
+                overrides_dir=Path(os.environ.get("config_dir", "/config")),
+                **fingerprint_inputs,
             )
+            stored_fp = read_fingerprint(fp_file)
+            if fingerprint_matches(stored_fp, current_fp) and existing_deb:
+                log_file.write_text("Skipped: fingerprint unchanged\n")
+                return BuildResult(
+                    package=pkg_name,
+                    pkg_dir=pkg_dir,
+                    status=BuildStatus.SKIPPED,
+                    deb_file=existing_deb,
+                )
+        else:
+            current_fp = None
+            # Fallback: old behavior (skip if .deb exists)
+            if existing_deb:
+                return BuildResult(
+                    package=pkg_name,
+                    pkg_dir=pkg_dir,
+                    status=BuildStatus.SKIPPED,
+                    deb_file=existing_deb,
+                )
 
         # Check debian directory exists in work dir
         src_debian_dir = pkg_work_dir / "debian"
@@ -222,6 +250,8 @@ def build_single_package(
                 dest_ddeb = release_dir / ddeb_file.name
                 shutil.move(str(ddeb_file), str(dest_ddeb))
 
+            if current_fp:
+                write_fingerprint(fp_file, current_fp)
             return BuildResult(
                 package=pkg_name,
                 pkg_dir=pkg_dir,
@@ -255,6 +285,11 @@ def main() -> int:
     check_dir = get_env_path("check_dir")
     log_dir = get_env_path("log_dir")
     log_packages_dir = Path(os.environ.get("log_packages_dir", str(log_dir / "packages")))
+
+    from fingerprint import get_fingerprint_inputs_from_env
+
+    fp_inputs = get_fingerprint_inputs_from_env()
+
     ros_distro = get_env_str("ROS_DISTRO", "humble")
     ros_install_prefix = get_env_str("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
     colcon_install_path = str(colcon_work_dir / "install")
@@ -311,6 +346,7 @@ def main() -> int:
                 colcon_install_path,
                 package_suffix,
                 log_packages_dir,
+                fp_inputs,
             ): pkg_name
             for pkg_name, pkg_dir in packages
         }

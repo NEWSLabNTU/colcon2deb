@@ -91,15 +91,24 @@ def copy_or_create_debian_dir(
     peer_packages: list[str],
     package_suffix: str | None = None,
     log_packages_dir: Path | None = None,
+    fingerprint_inputs: dict[str, str] | None = None,
 ) -> DebianDirResult:
     """Generate debian directory for a single package.
 
     Either copies from debian-overrides or uses rosdeb_bloom library.
     """
+    from fingerprint import (
+        compute_fingerprint,
+        fingerprint_matches,
+        read_fingerprint,
+        write_fingerprint,
+    )
+
     pkg_work_dir = pkg_build_dir / pkg_name
     pkg_config_dir = config_dir / pkg_name
     src_debian_dir = config_dir / pkg_name / "debian"
     dst_debian_dir = pkg_work_dir / "debian"
+    fp_file = pkg_work_dir / ".fingerprint.json"
 
     # Per-package log file
     if log_packages_dir:
@@ -113,6 +122,26 @@ def copy_or_create_debian_dir(
     pkg_work_dir.mkdir(parents=True, exist_ok=True)
     pkg_config_dir.mkdir(parents=True, exist_ok=True)
     log_file.write_text("")
+
+    # Check fingerprint — skip if inputs unchanged and debian/ already generated
+    if fingerprint_inputs is not None:
+        current_fp = compute_fingerprint(
+            pkg_name=pkg_name,
+            source_dir=pkg_dir.parent,
+            overrides_dir=config_dir,
+            **fingerprint_inputs,
+        )
+        stored_fp = read_fingerprint(fp_file)
+        if fingerprint_matches(stored_fp, current_fp) and dst_debian_dir.is_dir():
+            log_file.write_text("Skipped: fingerprint unchanged\n")
+            return DebianDirResult(
+                package=pkg_name,
+                pkg_dir=pkg_dir,
+                status=DebianDirStatus.SUCCESS,
+                method="copy" if src_debian_dir.is_dir() else "bloom",
+            )
+    else:
+        current_fp = None
 
     try:
         if src_debian_dir.is_dir():
@@ -137,6 +166,8 @@ def copy_or_create_debian_dir(
                     error=f"rsync failed: {result.stderr}",
                 )
 
+            if current_fp:
+                write_fingerprint(fp_file, current_fp)
             return DebianDirResult(
                 package=pkg_name,
                 pkg_dir=pkg_dir,
@@ -199,6 +230,8 @@ def copy_or_create_debian_dir(
                     f"Copied to {dst_debian_dir}\n"
                 )
 
+            if current_fp:
+                write_fingerprint(fp_file, current_fp)
             return DebianDirResult(
                 package=pkg_name,
                 pkg_dir=pkg_dir,
@@ -234,6 +267,11 @@ def main() -> int:
     ros_install_prefix = get_env_str("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
     # Optional package suffix (e.g., "1.5.0" for ros-humble-pkg-1.5.0)
     package_suffix = os.environ.get("ROS_PACKAGE_SUFFIX") or None
+
+    # Build fingerprint inputs from environment
+    from fingerprint import get_fingerprint_inputs_from_env
+
+    fp_inputs = get_fingerprint_inputs_from_env()
 
     os.chdir(colcon_work_dir)
 
@@ -273,6 +311,7 @@ def main() -> int:
                 all_package_names,  # Pass all packages as peer_packages
                 package_suffix,
                 log_packages_dir if str(log_packages_dir) else None,
+                fp_inputs,
             ): pkg_name
             for pkg_name, pkg_dir in packages
         }

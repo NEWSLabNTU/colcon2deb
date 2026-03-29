@@ -646,6 +646,18 @@ def main():
     else:
         image_name = docker_config["image"]
 
+    # Capture Docker image ID for fingerprinting
+    try:
+        img_result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.Id}}", image_name],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        docker_image_id = img_result.stdout.strip() if img_result.returncode == 0 else "unknown"
+    except Exception:
+        docker_image_id = "unknown"
+
     # Verify workspace directory exists
     workspace_dir = Path(args.workspace).resolve()
     if not workspace_dir.exists():
@@ -741,6 +753,10 @@ def main():
         f"ROS_PACKAGE_SUFFIX={package_suffix or ''}",
         "-e",
         f"COLCON2DEB_PARALLEL_JOBS={parallel_jobs}",
+        "-e",
+        f"COLCON2DEB_VERSION={__version__}",
+        "-e",
+        f"COLCON2DEB_IMAGE_ID={docker_image_id}",
         "-v",
         "/tmp/.X11-unix/:/tmp/.X11-unix",
         "-v",
