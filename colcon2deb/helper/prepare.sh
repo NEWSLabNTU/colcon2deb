@@ -4,7 +4,8 @@ mkdir -p "$top_work_dir"
 mkdir -p "$colcon_work_dir"
 mkdir -p "$release_dir"
 mkdir -p "$log_dir"
-mkdir -p "$log_logs_dir"
+mkdir -p "$log_phases_dir"
+mkdir -p "$log_packages_dir"
 mkdir -p "$log_reports_dir"
 mkdir -p "$log_scripts_dir"
 mkdir -p "$pkg_build_dir"
@@ -30,7 +31,6 @@ export -f make_pkg_work_dir
 if [ -d "$colcon_work_dir/src" ]; then
     cd "$colcon_work_dir"
     # Directory creation is I/O bound, use half the configured parallelism
-    # Read parallel_jobs from config (via environment variable)
     cpu_count=$(nproc)
     config_parallel="${COLCON2DEB_PARALLEL_JOBS:-0}"
     if [ "$config_parallel" -gt 0 ]; then
@@ -40,8 +40,6 @@ if [ -d "$colcon_work_dir/src" ]; then
     fi
     njobs_io=$(( (total_parallel + 1) / 2 ))
 
-    # Use GNU parallel instead of sem with exported functions
-    # This avoids bash function export issues with /bin/sh
     colcon list --base-paths src | cut -f1 | \
         parallel -j "$njobs_io" "mkdir -p '$pkg_build_dir'/{}; rm -f '$pkg_build_dir'/{}/*.out '$pkg_build_dir'/{}/*.err"
 fi

@@ -580,11 +580,13 @@ def main():
     log_dir = log_base_dir / log_timestamp
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create log subdirectories
-    log_logs_dir = log_dir / "logs"
+    # Create log subdirectories (new structure: phases/, packages/, reports/, scripts/)
+    log_phases_dir = log_dir / "phases"
+    log_packages_dir = log_dir / "packages"
     log_reports_dir = log_dir / "reports"
     log_scripts_dir = log_dir / "scripts"
-    log_logs_dir.mkdir(parents=True, exist_ok=True)
+    log_phases_dir.mkdir(parents=True, exist_ok=True)
+    log_packages_dir.mkdir(parents=True, exist_ok=True)
     log_reports_dir.mkdir(parents=True, exist_ok=True)
     log_scripts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -616,7 +618,7 @@ def main():
                     temp_dockerfile,
                     docker_config.get("image_name", "colcon2deb_builder"),
                     build_context=temp_context,
-                    log_dir=log_logs_dir,
+                    log_dir=log_dir,
                     platform=docker_config.get("platform"),
                 )
         else:
@@ -638,7 +640,7 @@ def main():
                 dockerfile_path,
                 docker_config.get("image_name", "colcon2deb_builder"),
                 build_context=build_context,
-                log_dir=log_logs_dir,
+                log_dir=log_dir,
                 platform=docker_config.get("platform"),
             )
     else:

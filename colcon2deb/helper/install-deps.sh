@@ -8,7 +8,7 @@ run_privileged() {
 }
 
 # Run `apt update` to refresh package caches
-run_privileged apt update > "$log_logs_dir/phase3_apt_update.log" 2>&1 || {
+run_privileged apt update 2>&1 || {
     echo 'warning: apt update had errors (continuing anyway)' >&2
 }
 
@@ -22,10 +22,9 @@ if [ "$rosdep_install" = y ]; then
     # Save install script to log for reference
     cp "$install_script" "$log_scripts_dir/install_deps.sh"
 
-    # Execute the installation with logging
-    bash "$install_script" > "$log_logs_dir/phase3_apt_install.log" 2>&1 || {
+    # Execute the installation (stdout+stderr captured by run_script tee)
+    bash "$install_script" 2>&1 || {
         echo "error: failed to install dependencies" >&2
-        tail -n 30 "$log_logs_dir/phase3_apt_install.log" >&2
         rm -f "$install_script"
         exit 1
     }

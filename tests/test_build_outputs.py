@@ -35,7 +35,8 @@ class TestOutputDirectoryStructure:
     def test_log_subdirectories(self, tmp_output_dir: Path) -> None:
         latest = tmp_output_dir / "logs" / "latest"
         assert latest.is_symlink()
-        assert (latest / "logs").is_dir()
+        assert (latest / "phases").is_dir()
+        assert (latest / "packages").is_dir()
         assert (latest / "reports").is_dir()
         assert (latest / "scripts").is_dir()
 

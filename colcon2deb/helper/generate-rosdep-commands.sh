@@ -28,14 +28,13 @@ simulate_output=$(rosdep install --simulate --reinstall \
     --rosdistro "${ROS_DISTRO:-humble}" \
     -r 2>&1) || true
 
-# Save raw output for debugging
-echo "$simulate_output" > "$log_logs_dir/phase5_rosdep.log" 2>/dev/null || true
+# Save raw output for debugging (to phases dir, captured by run_script)
+echo "$simulate_output" > "$log_phases_dir/phase5_rosdep_simulate.log" 2>/dev/null || true
 
 # Parse the simulate output to extract package names
 # Format is:
 #   #[apt] Installation commands:
 #     sudo -H apt-get install package1
-#     sudo -H apt-get install package2
 #   #[pip] Installation commands:
 #     sudo -H pip install pypkg1
 
@@ -44,7 +43,6 @@ pip_packages=()
 current_mode=""
 
 while IFS= read -r line; do
-    # Detect section headers
     if [[ "$line" =~ ^\#\[apt\] ]]; then
         current_mode="apt"
         continue
@@ -53,10 +51,8 @@ while IFS= read -r line; do
         continue
     fi
 
-    # Extract package name from install commands
     if [[ "$current_mode" == "apt" && "$line" =~ apt-get[[:space:]]+install[[:space:]]+(.+)$ ]]; then
         pkg="${BASH_REMATCH[1]}"
-        # Remove any trailing whitespace
         pkg="${pkg%% }"
         apt_packages+=("$pkg")
     elif [[ "$current_mode" == "pip" && "$line" =~ pip[[:space:]]+install[[:space:]]+(.+)$ ]]; then
@@ -66,7 +62,6 @@ while IFS= read -r line; do
     fi
 done <<< "$simulate_output"
 
-# Report counts
 echo "info: found ${#apt_packages[@]} apt packages, ${#pip_packages[@]} pip packages" >&2
 
 # Generate the install script

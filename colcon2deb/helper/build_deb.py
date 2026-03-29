@@ -113,6 +113,7 @@ def build_single_package(
     ros_install_prefix: str,
     colcon_install_path: str,
     package_suffix: str | None = None,
+    log_packages_dir: Path | None = None,
 ) -> BuildResult:
     """Build a single Debian package.
 
@@ -120,15 +121,18 @@ def build_single_package(
     """
     pkg_name_dashed = pkg_name.replace("_", "-")
     pkg_work_dir = pkg_build_dir / pkg_name
-    out_file = pkg_work_dir / "build.out"
-    err_file = pkg_work_dir / "build.err"
+
+    # Per-package log file: logs/packages/{pkg}/build_deb.log
+    if log_packages_dir:
+        pkg_log_dir = log_packages_dir / pkg_name
+        pkg_log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = pkg_log_dir / "build_deb.log"
+    else:
+        log_file = pkg_work_dir / "build_deb.log"
 
     # Ensure directories exist
     pkg_work_dir.mkdir(parents=True, exist_ok=True)
-
-    # Clear log files
-    out_file.write_text("")
-    err_file.write_text("")
+    log_file.write_text("")
 
     try:
         # Check if package is already built
@@ -145,7 +149,7 @@ def build_single_package(
         src_debian_dir = pkg_work_dir / "debian"
         if not src_debian_dir.is_dir():
             error_msg = f"debian directory not found at {src_debian_dir}"
-            err_file.write_text(error_msg)
+            log_file.write_text(error_msg)
             return BuildResult(
                 package=pkg_name,
                 pkg_dir=pkg_dir,
@@ -192,8 +196,9 @@ def build_single_package(
             env=env,
         )
 
-        out_file.write_text(result.stdout)
-        err_file.write_text(result.stderr)
+        log_file.write_text(
+            result.stdout + ("\n--- STDERR ---\n" + result.stderr if result.stderr else "")
+        )
 
         if result.returncode != 0:
             return BuildResult(
@@ -232,7 +237,7 @@ def build_single_package(
             )
 
     except Exception as e:
-        err_file.write_text(str(e))
+        log_file.write_text(str(e))
         return BuildResult(
             package=pkg_name,
             pkg_dir=pkg_dir,
@@ -249,6 +254,7 @@ def main() -> int:
     release_dir = get_env_path("release_dir")
     check_dir = get_env_path("check_dir")
     log_dir = get_env_path("log_dir")
+    log_packages_dir = Path(os.environ.get("log_packages_dir", str(log_dir / "packages")))
     ros_distro = get_env_str("ROS_DISTRO", "humble")
     ros_install_prefix = get_env_str("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
     colcon_install_path = str(colcon_work_dir / "install")
@@ -304,6 +310,7 @@ def main() -> int:
                 ros_install_prefix,
                 colcon_install_path,
                 package_suffix,
+                log_packages_dir,
             ): pkg_name
             for pkg_name, pkg_dir in packages
         }
@@ -315,9 +322,9 @@ def main() -> int:
                 results.append(result)
 
                 if result.status == BuildStatus.FAILED:
-                    err_log = pkg_build_dir / pkg_name / "build.err"
+                    pkg_log = log_packages_dir / pkg_name / "build_deb.log"
                     print(
-                        f"error: failed to build Debian package for {pkg_name} (see {err_log})",
+                        f"error: failed to build Debian package for {pkg_name} (see {pkg_log})",
                         file=sys.stderr,
                     )
             except Exception as e:

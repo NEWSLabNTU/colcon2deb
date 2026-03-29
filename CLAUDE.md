@@ -214,19 +214,27 @@ build/
 ├── debs/                    # Output .deb files
 ├── logs/                    # Build logs
 │   ├── <timestamp>/         # Timestamped log directory
-│   │   ├── logs/            # Phase log files
-│   │   │   ├── docker_build.log
-│   │   │   ├── phase3_apt_update.log
-│   │   │   ├── phase3_apt_install.log
-│   │   │   ├── phase4_colcon_build.log
-│   │   │   └── phase5_rosdep.log
-│   │   ├── reports/         # Status and summary files
+│   │   ├── docker_build.log # Host-side Docker image build log
+│   │   ├── phases/          # One log per build phase (predictable names, no dates)
+│   │   │   ├── phase1_prepare.log
+│   │   │   ├── phase2_copy_src.log
+│   │   │   ├── phase3_install_deps.log
+│   │   │   ├── phase4_build_src.log
+│   │   │   ├── phase5_create_rosdep_list.log
+│   │   │   ├── phase6_create_package_list.log
+│   │   │   ├── phase7_generate_debian_dir.log
+│   │   │   └── phase8_build_deb.log
+│   │   ├── packages/        # Per-package logs
+│   │   │   └── <package>/
+│   │   │       ├── generate_debian.log
+│   │   │       └── build_deb.log
+│   │   ├── reports/         # Build reports
 │   │   │   ├── summary.txt
 │   │   │   ├── packages.txt
 │   │   │   ├── successful.txt
 │   │   │   ├── failed.txt
 │   │   │   └── skipped.txt
-│   │   └── scripts/         # Generated scripts
+│   │   └── scripts/         # Generated scripts for reference
 │   │       └── install_deps.sh
 │   └── latest -> <timestamp>
 ├── packaging/               # Debian packaging work directory
@@ -243,11 +251,12 @@ build/
 
 ### Build Logs
 Logs are organized in `build/logs/latest/`:
-- `logs/` - Phase execution logs (docker_build, apt, colcon, rosdep)
+- `phases/phase{1-8}_*.log` - One log per build phase (predictable names)
+- `packages/<pkg>/generate_debian.log` - Per-package debian generation log
+- `packages/<pkg>/build_deb.log` - Per-package deb build log
 - `reports/summary.txt` - Build summary with statistics
 - `reports/{successful,failed,skipped}.txt` - Package status lists
-- `packaging/<package>/gen_deb.{out,err}` - Debian generation logs
-- `packaging/<package>/build.{out,err}` - Package build logs
+- `docker_build.log` - Docker image build log (host-side)
 
 ### Common Issues
 

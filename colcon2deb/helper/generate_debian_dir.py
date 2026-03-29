@@ -90,6 +90,7 @@ def copy_or_create_debian_dir(
     ros_install_prefix: str,
     peer_packages: list[str],
     package_suffix: str | None = None,
+    log_packages_dir: Path | None = None,
 ) -> DebianDirResult:
     """Generate debian directory for a single package.
 
@@ -97,18 +98,21 @@ def copy_or_create_debian_dir(
     """
     pkg_work_dir = pkg_build_dir / pkg_name
     pkg_config_dir = config_dir / pkg_name
-    out_file = pkg_work_dir / "gen_deb.out"
-    err_file = pkg_work_dir / "gen_deb.err"
     src_debian_dir = config_dir / pkg_name / "debian"
     dst_debian_dir = pkg_work_dir / "debian"
+
+    # Per-package log file
+    if log_packages_dir:
+        pkg_log_dir = log_packages_dir / pkg_name
+        pkg_log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = pkg_log_dir / "generate_debian.log"
+    else:
+        log_file = pkg_work_dir / "generate_debian.log"
 
     # Create directories
     pkg_work_dir.mkdir(parents=True, exist_ok=True)
     pkg_config_dir.mkdir(parents=True, exist_ok=True)
-
-    # Clear log files
-    out_file.write_text("")
-    err_file.write_text("")
+    log_file.write_text("")
 
     try:
         if src_debian_dir.is_dir():
@@ -120,8 +124,9 @@ def copy_or_create_debian_dir(
                 text=True,
             )
 
-            out_file.write_text(result.stdout)
-            err_file.write_text(result.stderr)
+            log_file.write_text(
+                result.stdout + ("\n--- STDERR ---\n" + result.stderr if result.stderr else "")
+            )
 
             if result.returncode != 0:
                 return DebianDirResult(
@@ -159,7 +164,7 @@ def copy_or_create_debian_dir(
 
             if not cast(bool, bloom_result.success):  # pyright: ignore[reportUnknownMemberType]
                 error_msg = cast(str, bloom_result.error) or "Unknown error"  # pyright: ignore[reportUnknownMemberType]
-                err_file.write_text(error_msg)
+                log_file.write_text(error_msg)
                 return DebianDirResult(
                     package=pkg_name,
                     pkg_dir=pkg_dir,
@@ -169,7 +174,7 @@ def copy_or_create_debian_dir(
                 )
 
             debian_dir_path = cast(str, bloom_result.debian_dir)  # pyright: ignore[reportUnknownMemberType]
-            out_file.write_text(f"Generated debian directory at {debian_dir_path}\n")
+            log_file.write_text(f"Generated debian directory at {debian_dir_path}\n")
 
             # The library generates debian/ in pkg_dir, copy to cache (config_dir) and work dir
             generated_debian_dir = pkg_dir / "debian"
@@ -189,8 +194,8 @@ def copy_or_create_debian_dir(
                 # Clean up debian dir from source package dir
                 shutil.rmtree(generated_debian_dir)
 
-                out_file.write_text(
-                    out_file.read_text() + f"Cached to {cache_debian_dir}\n"
+                log_file.write_text(
+                    log_file.read_text() + f"Cached to {cache_debian_dir}\n"
                     f"Copied to {dst_debian_dir}\n"
                 )
 
@@ -204,7 +209,7 @@ def copy_or_create_debian_dir(
     except Exception as e:
         import traceback
 
-        err_file.write_text(f"{e}\n{traceback.format_exc()}")
+        log_file.write_text(f"{e}\n{traceback.format_exc()}")
         return DebianDirResult(
             package=pkg_name,
             pkg_dir=pkg_dir,
@@ -224,6 +229,7 @@ def main() -> int:
     config_dir = get_env_path("config_dir")
     pkg_build_dir = get_env_path("pkg_build_dir")
     script_dir = get_env_path("script_dir")
+    log_packages_dir = Path(os.environ.get("log_packages_dir", ""))
     ros_distro = get_env_str("ROS_DISTRO", "humble")
     ros_install_prefix = get_env_str("ROS_INSTALL_PREFIX", f"/opt/ros/{ros_distro}")
     # Optional package suffix (e.g., "1.5.0" for ros-humble-pkg-1.5.0)
@@ -266,6 +272,7 @@ def main() -> int:
                 ros_install_prefix,
                 all_package_names,  # Pass all packages as peer_packages
                 package_suffix,
+                log_packages_dir if str(log_packages_dir) else None,
             ): pkg_name
             for pkg_name, pkg_dir in packages
         }
@@ -277,9 +284,9 @@ def main() -> int:
                 results.append(result)
 
                 if result.status == DebianDirStatus.FAILED:
-                    err_log = pkg_build_dir / pkg_name / "gen_deb.err"
+                    pkg_log = (log_packages_dir or pkg_build_dir) / pkg_name / "generate_debian.log"
                     print(
-                        f"error: failed to generate Debian files for {pkg_name} (see {err_log})",
+                        f"error: failed to generate Debian files for {pkg_name} (see {pkg_log})",
                         file=sys.stderr,
                     )
             except Exception as e:

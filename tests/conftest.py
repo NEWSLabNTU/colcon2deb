@@ -43,7 +43,8 @@ def tmp_output_dir(tmp_path: Path) -> Path:
     (output / "packaging").mkdir()
     (output / "workspace" / "src").mkdir(parents=True)
     logs = output / "logs" / "2026-03-28_02-09-16"
-    (logs / "logs").mkdir(parents=True)
+    (logs / "phases").mkdir(parents=True)
+    (logs / "packages").mkdir()
     (logs / "reports").mkdir()
     (logs / "scripts").mkdir()
     # Create 'latest' symlink

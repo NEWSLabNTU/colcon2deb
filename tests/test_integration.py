@@ -156,6 +156,42 @@ class TestDefaultPrefixBuild:
         assert (reports / "failed.txt").exists()
         assert (reports / "packages.txt").exists()
 
+    def test_log_directory_structure(self, default_build: Path) -> None:
+        """New log layout: phases/, packages/, reports/, scripts/."""
+        latest = default_build / "logs" / "latest"
+        assert (latest / "phases").is_dir()
+        assert (latest / "packages").is_dir()
+        assert (latest / "reports").is_dir()
+        assert (latest / "scripts").is_dir()
+
+    def test_phase_logs_exist(self, default_build: Path) -> None:
+        """Every phase should have a log file with a predictable name (no dates)."""
+        phases = default_build / "logs" / "latest" / "phases"
+        # Check the 8 main phase logs exist (there may be extra detail logs like rosdep_simulate)
+        expected = [
+            "phase1_prepare.log",
+            "phase2_copy_src.log",
+            "phase3_install_deps.log",
+            "phase4_build_src.log",
+            "phase5_create_rosdep_list.log",
+            "phase6_create_package_list.log",
+            "phase7_generate_debian_dir.log",
+            "phase8_build_deb.log",
+        ]
+        for name in expected:
+            assert (phases / name).exists(), f"Missing phase log: {name}"
+
+    def test_per_package_logs(self, default_build: Path) -> None:
+        """Per-package logs should be in packages/ with predictable names."""
+        packages = default_build / "logs" / "latest" / "packages"
+        for pkg_name in ["test_cpp_pkg", "test_py_pkg"]:
+            pkg_log_dir = packages / pkg_name
+            assert pkg_log_dir.is_dir(), f"Missing package log dir: {pkg_name}"
+            gen_log = pkg_log_dir / "generate_debian.log"
+            build_log = pkg_log_dir / "build_deb.log"
+            assert gen_log.exists(), f"Missing {pkg_name}/generate_debian.log"
+            assert build_log.exists(), f"Missing {pkg_name}/build_deb.log"
+
     def test_all_packages_successful(self, default_build: Path) -> None:
         reports = default_build / "logs" / "latest" / "reports"
         successful = (reports / "successful.txt").read_text().strip().split("\n")
