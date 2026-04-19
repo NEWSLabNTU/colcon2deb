@@ -75,6 +75,9 @@ def get_package_list(colcon_work_dir: Path) -> list[tuple[str, Path]]:
         if len(parts) >= 2:
             pkg_name = parts[0]
             pkg_dir = (colcon_work_dir / parts[1]).resolve()
+            # Skip non-ROS packages (no package.xml) — bloom requires it
+            if not (pkg_dir / "package.xml").exists():
+                continue
             packages.append((pkg_name, pkg_dir))
 
     return packages
