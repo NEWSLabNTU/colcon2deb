@@ -1,7 +1,9 @@
-"""Tests for the event protocol used for container-to-host TUI communication.
+"""Round-trip tests for the container→host event protocol.
 
-Events are JSONL (one JSON object per line) written to a shared file.
-Based on real event sequences from Autoware 1.5.0/amd64 builds.
+The container emits events via colcon2deb.helper.events; the host tails the
+file and dispatches on the type constants in colcon2deb.events. These tests
+run the real emitter and check the host-side contract, so writer/reader
+format drift fails a test instead of silently breaking the TUI.
 """
 
 from __future__ import annotations
@@ -9,89 +11,72 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
+from colcon2deb import events as host_events
+from colcon2deb.helper import events as emitter
 
 
-def parse_events(path: Path) -> list[dict]:
-    """Parse a JSONL events file into a list of event dicts."""
-    events = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                events.append(json.loads(line))
-    return events
+def _read_events(output_dir: Path) -> list[dict[str, object]]:
+    event_file = output_dir / host_events.EVENT_FILE
+    return [json.loads(line) for line in event_file.read_text().splitlines() if line.strip()]
 
 
-class TestEventParsing:
-    """Test parsing of event JSONL files."""
+class TestEmitterRoundTrip:
+    def test_emitter_writes_to_host_event_file(self, tmp_path: Path) -> None:
+        """The emitter and the host must agree on the event file name."""
+        emitter.init(tmp_path)
+        emitter.build_start(total_phases=8)
+        assert (tmp_path / host_events.EVENT_FILE).exists()
 
-    def test_successful_build_events(self, events_dir: Path) -> None:
-        events = parse_events(events_dir / "successful_build.jsonl")
-        assert len(events) == 18
-        assert events[0]["type"] == "build_start"
-        assert events[0]["phases"] == 8
-        assert events[-1]["type"] == "build_complete"
-        assert events[-1]["success"] is True
+    def test_full_build_sequence(self, tmp_path: Path) -> None:
+        emitter.init(tmp_path)
+        emitter.build_start(total_phases=8)
+        emitter.phase_start(1, "Preparing")
+        emitter.phase_complete(1, success=True)
+        emitter.phase_skip(7)
+        emitter.package_start(8, "my_pkg")
+        emitter.package_complete(8, "my_pkg", success=False)
+        emitter.build_complete(success=False)
 
-    def test_all_phases_present_in_successful_build(self, events_dir: Path) -> None:
-        events = parse_events(events_dir / "successful_build.jsonl")
-        phase_starts = [e for e in events if e["type"] == "phase_start"]
-        phase_completes = [e for e in events if e["type"] == "phase_complete"]
-        assert len(phase_starts) == 8
-        assert len(phase_completes) == 8
-        # All phases succeeded
-        for pc in phase_completes:
-            assert pc["success"] is True
-
-    def test_phase_ordering(self, events_dir: Path) -> None:
-        events = parse_events(events_dir / "successful_build.jsonl")
-        phase_starts = [e for e in events if e["type"] == "phase_start"]
-        phases_in_order = [e["phase"] for e in phase_starts]
-        assert phases_in_order == [1, 2, 3, 4, 5, 6, 7, 8]
-
-    def test_failed_build_stops_at_phase(self, events_dir: Path) -> None:
-        events = parse_events(events_dir / "failed_at_phase4.jsonl")
-        assert events[-1]["type"] == "build_complete"
-        assert events[-1]["success"] is False
-        # Phase 4 failed
-        phase4_complete = [
-            e
-            for e in events
-            if e["type"] == "phase_complete" and e["phase"] == 4
+        events = _read_events(tmp_path)
+        types = [e["type"] for e in events]
+        assert types == [
+            host_events.BUILD_START,
+            host_events.PHASE_START,
+            host_events.PHASE_COMPLETE,
+            host_events.PHASE_SKIP,
+            host_events.PACKAGE_START,
+            host_events.PACKAGE_COMPLETE,
+            host_events.BUILD_COMPLETE,
         ]
-        assert len(phase4_complete) == 1
-        assert phase4_complete[0]["success"] is False
-        # Phases 5-8 should not appear
-        later_phases = [
-            e for e in events if e.get("phase", 0) > 4 and e["type"] == "phase_start"
-        ]
-        assert len(later_phases) == 0
 
-    def test_partial_package_failures(self, events_dir: Path) -> None:
-        events = parse_events(events_dir / "partial_package_failures.jsonl")
-        pkg_completes = [e for e in events if e["type"] == "package_complete"]
-        succeeded = [e for e in pkg_completes if e["success"] is True]
-        failed = [e for e in pkg_completes if e["success"] is False]
-        assert len(succeeded) == 3  # lint_common, ndt in phase 7; lint_common in phase 8
-        assert len(failed) == 1  # ndt failed in phase 8
-        # Build still completes (partial success)
-        assert events[-1]["type"] == "build_complete"
-        assert events[-1]["success"] is True
+    def test_events_are_one_json_object_per_line(self, tmp_path: Path) -> None:
+        emitter.init(tmp_path)
+        emitter.phase_start(1, "Preparing")
+        emitter.phase_complete(1, success=True)
+        raw = (tmp_path / host_events.EVENT_FILE).read_text()
+        lines = [ln for ln in raw.splitlines() if ln.strip()]
+        assert len(lines) == 2
+        for line in lines:
+            json.loads(line)  # must each parse standalone
 
-    def test_event_timestamps_are_iso_format(self, events_dir: Path) -> None:
-        events = parse_events(events_dir / "successful_build.jsonl")
-        for event in events:
-            ts = event["timestamp"]
-            # Should be ISO format: YYYY-MM-DDTHH:MM:SS.ffffff
-            assert "T" in ts
-            assert len(ts) >= 19
+    def test_event_payload_fields(self, tmp_path: Path) -> None:
+        emitter.init(tmp_path)
+        emitter.phase_complete(4, success=False)
+        emitter.package_complete(8, "pkg_a", success=True)
+        events = _read_events(tmp_path)
+        phase_evt, pkg_evt = events
+        assert phase_evt["phase"] == 4
+        assert phase_evt["success"] is False
+        assert "timestamp" in phase_evt
+        assert pkg_evt["package"] == "pkg_a"
+        assert pkg_evt["success"] is True
 
-    def test_phase_names_present(self, events_dir: Path) -> None:
-        """Phase start events include a human-readable name."""
-        events = parse_events(events_dir / "successful_build.jsonl")
-        phase_starts = [e for e in events if e["type"] == "phase_start"]
-        for ps in phase_starts:
-            assert "name" in ps
-            assert isinstance(ps["name"], str)
-            assert len(ps["name"]) > 0
+    def test_init_clears_previous_events(self, tmp_path: Path) -> None:
+        emitter.init(tmp_path)
+        emitter.build_start()
+        emitter.init(tmp_path)
+        assert _read_events(tmp_path) == []
+
+    def test_emit_without_init_is_noop(self) -> None:
+        emitter._event_file = None  # type: ignore[attr-defined]
+        emitter.build_start()  # must not raise

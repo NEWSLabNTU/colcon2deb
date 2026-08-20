@@ -25,6 +25,17 @@ def init(output_dir: Path):
     _event_file.write_text("")
 
 
+def attach(output_dir: Path):
+    """Join an event stream another process already initialized.
+
+    Unlike init(), this never truncates the file — used by subprocess
+    scripts (build_deb.py, generate_debian_dir.py) to append events to
+    the stream the orchestrator opened.
+    """
+    global _event_file
+    _event_file = output_dir / ".events.jsonl"
+
+
 def emit(event_type: str, **kwargs: str | int | bool) -> None:
     """Emit an event to the shared event file.
 

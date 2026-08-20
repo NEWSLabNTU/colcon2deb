@@ -6,12 +6,10 @@ script_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 # Parse options using getopt
 OPTIONS=h
 LONGOPTIONS=help,uid:,gid:,output:,log-dir:,skip-rosdep-install,skip-copy-src,skip-gen-rosdep-list,skip-colcon-build,skip-gen-debian,skip-build-deb
-PARSED=$(getopt --options "$OPTIONS" --longoptions "$LONGOPTIONS" --name "$0" -- "$@")
-
-# Check if getopt failed
-if [[ $? -ne 0 ]]; then
+PARSED=$(getopt --options "$OPTIONS" --longoptions "$LONGOPTIONS" --name "$0" -- "$@") || {
+    echo "error: invalid options" >&2
     exit 1
-fi
+}
 
 # Evaluate the parsed options
 eval set -- "$PARSED"
@@ -91,11 +89,24 @@ if [ -z "$uid" -o -z "$gid" ]; then
     exit 1
 fi
 
-# Create a user with the host uid/gid and grant passwordless sudo
+# Create (or reuse) a user with the host uid/gid and grant passwordless sudo.
+# Newer base images (Ubuntu >= 23.04) already ship a user at uid 1000, so a
+# blind useradd fails; reuse the existing account in that case.
 name=builder
 groupadd -g "$gid" "$name" 2>/dev/null || true
-useradd -m -u "$uid" -g "$gid" -s /bin/bash "$name" 2>/dev/null || true
-echo "$name ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$name
+existing_user=$(getent passwd "$uid" | cut -d: -f1 || true)
+if [ -n "$existing_user" ]; then
+    echo "Reusing existing user '$existing_user' (uid $uid)"
+    name="$existing_user"
+    usermod -s /bin/bash "$name"
+else
+    useradd -m -u "$uid" -g "$gid" -s /bin/bash "$name" || {
+        echo "error: failed to create build user with uid=$uid gid=$gid" >&2
+        exit 1
+    }
+fi
+mkdir -p /etc/sudoers.d
+echo "$name ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/colcon2deb-builder
 
 # Install required dependencies
 echo "Installing build dependencies..."

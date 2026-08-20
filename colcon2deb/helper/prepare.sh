@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -eo pipefail
 # Create directories first before trying to create files in them
 mkdir -p "$top_work_dir"
 mkdir -p "$colcon_work_dir"

@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+set -eo pipefail
 cd "$colcon_work_dir"
 
 if [ "$copy_src" = y ]; then

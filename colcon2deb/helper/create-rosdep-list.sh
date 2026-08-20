@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+set -eo pipefail
 # Generate a rosdep file to include packages and perform `rosdep
 # update`. The step is necessary for later bloom-generate.
 cd "$colcon_work_dir"

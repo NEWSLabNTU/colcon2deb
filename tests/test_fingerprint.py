@@ -84,85 +84,85 @@ class TestHashTree:
 
 class TestComputeFingerprint:
     def _make_pkg(self, tmp_path: Path) -> tuple[Path, Path]:
-        src = tmp_path / "src"
-        (src / "my_pkg").mkdir(parents=True)
-        (src / "my_pkg" / "main.cpp").write_text("int main() {}")
+        pkg_dir = tmp_path / "src" / "my_pkg"
+        pkg_dir.mkdir(parents=True)
+        (pkg_dir / "main.cpp").write_text("int main() {}")
         overrides = tmp_path / "overrides"
         overrides.mkdir()
-        return src, overrides
+        return pkg_dir, overrides
 
     def test_basic(self, tmp_path: Path) -> None:
-        src, overrides = self._make_pkg(tmp_path)
+        pkg_dir, overrides = self._make_pkg(tmp_path)
         fp = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **FP_DEFAULTS
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
         )
         assert "fingerprint" in fp
         assert len(fp["fingerprint"]) == 64
 
     def test_source_change(self, tmp_path: Path) -> None:
-        src, overrides = self._make_pkg(tmp_path)
+        pkg_dir, overrides = self._make_pkg(tmp_path)
         fp1 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **FP_DEFAULTS
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
         )
-        (src / "my_pkg" / "main.cpp").write_text("int main() { return 1; }")
+        (pkg_dir / "main.cpp").write_text("int main() { return 1; }")
         fp2 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **FP_DEFAULTS
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
         )
         assert fp1["fingerprint"] != fp2["fingerprint"]
 
     def test_override_change(self, tmp_path: Path) -> None:
-        src, overrides = self._make_pkg(tmp_path)
+        pkg_dir, overrides = self._make_pkg(tmp_path)
         fp1 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **FP_DEFAULTS
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
         )
         (overrides / "my_pkg").mkdir()
         (overrides / "my_pkg" / "control").write_text("new override")
         fp2 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **FP_DEFAULTS
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
         )
         assert fp1["fingerprint"] != fp2["fingerprint"]
 
     def test_install_prefix_change(self, tmp_path: Path) -> None:
-        src, overrides = self._make_pkg(tmp_path)
+        pkg_dir, overrides = self._make_pkg(tmp_path)
         fp1 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **FP_DEFAULTS
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
         )
         modified = {**FP_DEFAULTS, "install_prefix": "/opt/autoware/1.5.0"}
         fp2 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **modified
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **modified
         )
         assert fp1["fingerprint"] != fp2["fingerprint"]
 
     def test_suffix_change(self, tmp_path: Path) -> None:
-        src, overrides = self._make_pkg(tmp_path)
+        pkg_dir, overrides = self._make_pkg(tmp_path)
         fp1 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **FP_DEFAULTS
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
         )
         modified = {**FP_DEFAULTS, "package_suffix": "1-5-0"}
         fp2 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **modified
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **modified
         )
         assert fp1["fingerprint"] != fp2["fingerprint"]
 
     def test_docker_image_change(self, tmp_path: Path) -> None:
-        src, overrides = self._make_pkg(tmp_path)
+        pkg_dir, overrides = self._make_pkg(tmp_path)
         fp1 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **FP_DEFAULTS
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
         )
         modified = {**FP_DEFAULTS, "docker_image_id": "sha256:different"}
         fp2 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **modified
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **modified
         )
         assert fp1["fingerprint"] != fp2["fingerprint"]
 
     def test_version_change(self, tmp_path: Path) -> None:
-        src, overrides = self._make_pkg(tmp_path)
+        pkg_dir, overrides = self._make_pkg(tmp_path)
         fp1 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **FP_DEFAULTS
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
         )
         modified = {**FP_DEFAULTS, "colcon2deb_version": "0.4.0"}
         fp2 = compute_fingerprint(
-            pkg_name="my_pkg", source_dir=src, overrides_dir=overrides, **modified
+            pkg_name="my_pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **modified
         )
         assert fp1["fingerprint"] != fp2["fingerprint"]
 

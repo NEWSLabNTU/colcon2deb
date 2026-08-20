@@ -71,6 +71,7 @@ def run_script(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                errors="replace",
                 bufsize=1,
             )
             if process.stdout:
@@ -111,6 +112,7 @@ def run_python_script(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                errors="replace",
                 bufsize=1,
             )
             if process.stdout:
@@ -131,6 +133,34 @@ def run_python_script(
         sys.stdout.flush()
         sys.stderr.flush()
         return result.returncode == 0
+
+
+def capture_ros_env(setup_bash: Path) -> dict[str, str] | None:
+    """Source a setup.bash and return the resulting environment.
+
+    Uses `env -0` (NUL-separated) so multi-line values such as exported
+    bash functions cannot corrupt the parsed environment. Returns None if
+    the file is missing or sourcing fails.
+    """
+    if not setup_bash.exists():
+        return None
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1" && env -0', "_", str(setup_bash)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    env: dict[str, str] = {}
+    for entry in result.stdout.split("\0"):
+        if not entry or "=" not in entry:
+            continue
+        key, _, value = entry.partition("=")
+        # Skip exported bash functions (BASH_FUNC_name%%=() {...)
+        if key.startswith("BASH_FUNC_"):
+            continue
+        env[key] = value
+    return env
 
 
 def count_lines(file_path: Path) -> int:
@@ -167,6 +197,9 @@ def write_summary_file(
         if last_failing_phase:
             f.write("Status: FAILED\n")
             f.write(f"Last failing step: {last_failing_phase}\n")
+        elif failed_pkgs > 0:
+            f.write("Status: FAILED\n")
+            f.write(f"Last failing step: {failed_pkgs} package(s) failed to build\n")
         else:
             f.write("Status: SUCCESS\n")
         f.write("\n")
@@ -215,9 +248,14 @@ def print_summary(
     )
 
     print("")
+    if last_failing_phase:
+        print(f"Build failed at {last_failing_phase}")
+        print(f"See logs in {log_reports_dir.parent}")
+        return 1
     if failed_pkgs > 0:
         print(
-            f"Build completed with failures: {successful_pkgs}/{total_pkgs} succeeded, {failed_pkgs} failed"
+            f"Build completed with failures: {successful_pkgs} built, "
+            f"{skipped_pkgs} cached, {failed_pkgs} failed"
         )
         try:
             with open(failed_pkgs_file) as f:
@@ -232,7 +270,10 @@ def print_summary(
             pass
         return 1
     else:
-        print(f"Build completed: {successful_pkgs} packages built, {output_debs} .deb files")
+        print(
+            f"Build completed: {successful_pkgs} built, {skipped_pkgs} cached, "
+            f"{output_debs} .deb files"
+        )
         return 0
 
 
@@ -389,20 +430,26 @@ def main() -> int:
     run_phase(3, "Installing dependencies", "install-deps.sh")
     run_phase(4, "Compiling packages", "build-src.sh")
 
-    # Source setup.bash for subsequent phases
+    # Source setup.bash for subsequent phases. Phases 5-8 need the workspace
+    # environment; proceeding without it produces confusing rosdep/bloom
+    # errors, so a missing or broken setup.bash is a hard failure.
     if last_failing_phase is None:
         setup_bash = colcon_work_dir / "install" / "setup.bash"
-        if setup_bash.exists():
-            result = subprocess.run(
-                ["bash", "-c", 'source "$1" && env', "_", str(setup_bash)],
-                capture_output=True,
-                text=True,
+        ros_env = capture_ros_env(setup_bash)
+        if ros_env is None:
+            print(
+                f"error: cannot source workspace environment from {setup_bash}",
+                file=sys.stderr,
             )
-            if result.returncode == 0:
-                for line in result.stdout.split("\n"):
-                    if "=" in line:
-                        key, _, value = line.partition("=")
-                        env[key] = value
+            if not setup_bash.exists():
+                print(
+                    "hint: the workspace has not been built here; "
+                    "run without --skip-colcon-build first",
+                    file=sys.stderr,
+                )
+            last_failing_phase = "Workspace environment setup (install/setup.bash)"
+        else:
+            env.update(ros_env)
 
     # Phase 5-6: Dependency resolution
     run_phase(5, "Generating rosdep list", "create-rosdep-list.sh")
@@ -423,10 +470,14 @@ def main() -> int:
             log_file = log_phases_dir / "phase8_build_deb.log"
             ui.start_phase(phase_id)
             events.phase_start(8, "Building Debian packages")
-            # build_deb.py may return non-zero for partial failures but we still show summary
-            run_python_script("build_deb.py", script_dir, env, log_file=log_file)
-            ui.complete_phase(phase_id, success=True)
-            events.phase_complete(8, success=True)
+            # build_deb.py returns non-zero for partial failures; per-package
+            # failures are reported via failed.txt in the summary below.
+            phase8_ok = run_python_script("build_deb.py", script_dir, env, log_file=log_file)
+            ui.complete_phase(phase_id, success=phase8_ok)
+            events.phase_complete(8, success=phase8_ok)
+            if not phase8_ok and count_lines(failed_pkgs_file) == 0:
+                # build_deb.py died before recording any package failure
+                last_failing_phase = "Phase 8: Building Debian packages"
         else:
             ui.skip_phase("phase8")
             events.phase_skip(8)

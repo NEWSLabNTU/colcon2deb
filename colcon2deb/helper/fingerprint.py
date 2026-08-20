@@ -39,7 +39,7 @@ def hash_tree(path: Path) -> str:
 def compute_fingerprint(
     *,
     pkg_name: str,
-    source_dir: Path,
+    pkg_dir: Path,
     overrides_dir: Path,
     install_prefix: str,
     package_suffix: str,
@@ -49,10 +49,12 @@ def compute_fingerprint(
 ) -> dict[str, str]:
     """Build a fingerprint dict for a package.
 
+    pkg_dir is the package's actual source directory (from colcon list) —
+    its basename may differ from pkg_name, so it must be hashed directly.
     The 'fingerprint' key is a SHA-256 digest of all tracked inputs.
     The remaining keys are stored for human-readable debugging.
     """
-    source_hash = hash_tree(source_dir / pkg_name) if source_dir.is_dir() else hash_tree(source_dir)
+    source_hash = hash_tree(pkg_dir)
     overrides_hash = hash_tree(overrides_dir / pkg_name)
 
     combined = hashlib.sha256()
@@ -77,6 +79,16 @@ def compute_fingerprint(
         "colcon2deb_version": colcon2deb_version,
         "docker_image_id": docker_image_id,
     }
+
+
+def fingerprint_path(pkg_work_dir: Path, stage: str) -> Path:
+    """Per-stage fingerprint file path.
+
+    Each build stage (e.g. 'debian' for phase 7, 'deb' for phase 8) keeps
+    its own fingerprint file. Sharing one file caused phase 8 to see the
+    fingerprint phase 7 had just written and skip rebuilding the .deb.
+    """
+    return pkg_work_dir / f".fingerprint.{stage}.json"
 
 
 def read_fingerprint(path: Path) -> dict[str, str] | None:

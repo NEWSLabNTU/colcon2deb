@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+set -o pipefail
 cd "$colcon_work_dir"
 
 # Note: ROS environment should already be set up by /colcon2deb-setup.sh in entry.sh

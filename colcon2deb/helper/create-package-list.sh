@@ -1,13 +1,22 @@
+#!/usr/bin/env bash
+set -eo pipefail
 cd "$colcon_work_dir"
 
 # Detect Ubuntu codename
 ubuntu_codename=$(lsb_release -cs 2>/dev/null || echo "jammy")
 
-colcon info --base-paths src | awk -v codename="$ubuntu_codename" '\
+# Deb name: ros-<distro>-<name-dashed>[-<suffix>]=<version>-0<codename>
+colcon info --base-paths src | awk \
+    -v codename="$ubuntu_codename" \
+    -v distro="${ROS_DISTRO:-humble}" \
+    -v suffix="${ROS_PACKAGE_SUFFIX:-}" '
 $0 ~ /^  name: / {
   name = $2
   gsub("_", "-", name)
-  name = "ros-humble-" name
+  name = "ros-" distro "-" name
+  if (suffix != "") {
+    name = name "-" suffix
+  }
 }
 
 $0 ~ /^    version: / {

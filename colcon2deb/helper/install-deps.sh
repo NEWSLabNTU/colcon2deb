@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+set -o pipefail
 # Helper: run command with sudo if not root
 run_privileged() {
     if [ "$(id -u)" = "0" ]; then

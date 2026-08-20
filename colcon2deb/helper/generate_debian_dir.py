@@ -20,6 +20,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Literal, cast
 
+import events
+
 # Import rosdeb_bloom library (pip installed from /rosdeb-bloom in container)
 from rosdeb_bloom.api import generate_debian  # type: ignore[import-untyped]
 from rosdeb_bloom.logging import disable_ANSI_colors  # type: ignore[import-untyped]
@@ -103,15 +105,15 @@ def copy_or_create_debian_dir(
     from fingerprint import (
         compute_fingerprint,
         fingerprint_matches,
+        fingerprint_path,
         read_fingerprint,
         write_fingerprint,
     )
 
     pkg_work_dir = pkg_build_dir / pkg_name
-    pkg_config_dir = config_dir / pkg_name
     src_debian_dir = config_dir / pkg_name / "debian"
     dst_debian_dir = pkg_work_dir / "debian"
-    fp_file = pkg_work_dir / ".fingerprint.json"
+    fp_file = fingerprint_path(pkg_work_dir, "debian")
 
     # Per-package log file
     if log_packages_dir:
@@ -123,14 +125,13 @@ def copy_or_create_debian_dir(
 
     # Create directories
     pkg_work_dir.mkdir(parents=True, exist_ok=True)
-    pkg_config_dir.mkdir(parents=True, exist_ok=True)
     log_file.write_text("")
 
     # Check fingerprint — skip if inputs unchanged and debian/ already generated
     if fingerprint_inputs is not None:
         current_fp = compute_fingerprint(
             pkg_name=pkg_name,
-            source_dir=pkg_dir.parent,
+            pkg_dir=pkg_dir,
             overrides_dir=config_dir,
             **fingerprint_inputs,
         )
@@ -210,17 +211,13 @@ def copy_or_create_debian_dir(
             debian_dir_path = cast(str, bloom_result.debian_dir)  # pyright: ignore[reportUnknownMemberType]
             log_file.write_text(f"Generated debian directory at {debian_dir_path}\n")
 
-            # The library generates debian/ in pkg_dir, copy to cache (config_dir) and work dir
+            # The library generates debian/ in pkg_dir; move it to the work dir.
+            # config_dir is user-provided overrides only — never write there:
+            # caching bloom output into it made stale metadata (generated with
+            # an old install_prefix/version) shadow regeneration forever.
             generated_debian_dir = pkg_dir / "debian"
 
             if generated_debian_dir.is_dir():
-                # Cache to config_dir for subsequent builds
-                cache_debian_dir = pkg_config_dir / "debian"
-                if cache_debian_dir.exists():
-                    shutil.rmtree(cache_debian_dir)
-                shutil.copytree(generated_debian_dir, cache_debian_dir)
-
-                # Copy to work dir
                 if dst_debian_dir.exists():
                     shutil.rmtree(dst_debian_dir)
                 shutil.copytree(generated_debian_dir, dst_debian_dir)
@@ -228,10 +225,7 @@ def copy_or_create_debian_dir(
                 # Clean up debian dir from source package dir
                 shutil.rmtree(generated_debian_dir)
 
-                log_file.write_text(
-                    log_file.read_text() + f"Cached to {cache_debian_dir}\n"
-                    f"Copied to {dst_debian_dir}\n"
-                )
+                log_file.write_text(log_file.read_text() + f"Copied to {dst_debian_dir}\n")
 
             if current_fp:
                 write_fingerprint(fp_file, current_fp)
@@ -277,6 +271,9 @@ def main() -> int:
     fp_inputs = get_fingerprint_inputs_from_env()
 
     os.chdir(colcon_work_dir)
+
+    # Join the orchestrator's event stream for per-package TUI progress
+    events.attach(get_env_path("output_dir"))
 
     # Get package list
     packages = get_package_list(colcon_work_dir)
@@ -326,6 +323,7 @@ def main() -> int:
                 results.append(result)
 
                 if result.status == DebianDirStatus.FAILED:
+                    events.package_complete(7, pkg_name, success=False)
                     pkg_log = (log_packages_dir or pkg_build_dir) / pkg_name / "generate_debian.log"
                     print(
                         f"error: failed to generate Debian files for {pkg_name} (see {pkg_log})",
@@ -333,6 +331,7 @@ def main() -> int:
                     )
             except Exception as e:
                 print(f"error: exception processing {pkg_name}: {e}", file=sys.stderr)
+                events.package_complete(7, pkg_name, success=False)
                 results.append(
                     DebianDirResult(
                         package=pkg_name,

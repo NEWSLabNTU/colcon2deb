@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+import events
+
 
 class BuildStatus(Enum):
     SUCCESS = "success"
@@ -74,6 +76,10 @@ def get_package_list(colcon_work_dir: Path) -> list[tuple[str, Path]]:
         if len(parts) >= 2:
             pkg_name = parts[0]
             pkg_dir = (colcon_work_dir / parts[1]).resolve()
+            # Skip non-ROS packages (no package.xml) — phase 7 deliberately
+            # generates no debian/ for them, so building would always fail
+            if not (pkg_dir / "package.xml").exists():
+                continue
             packages.append((pkg_name, pkg_dir))
 
     return packages
@@ -123,13 +129,14 @@ def build_single_package(
     from fingerprint import (
         compute_fingerprint,
         fingerprint_matches,
+        fingerprint_path,
         read_fingerprint,
         write_fingerprint,
     )
 
     pkg_name_dashed = pkg_name.replace("_", "-")
     pkg_work_dir = pkg_build_dir / pkg_name
-    fp_file = pkg_work_dir / ".fingerprint.json"
+    fp_file = fingerprint_path(pkg_work_dir, "deb")
 
     # Per-package log file: logs/packages/{pkg}/build_deb.log
     if log_packages_dir:
@@ -149,7 +156,7 @@ def build_single_package(
         if fingerprint_inputs is not None:
             current_fp = compute_fingerprint(
                 pkg_name=pkg_name,
-                source_dir=pkg_dir.parent,
+                pkg_dir=pkg_dir,
                 overrides_dir=Path(os.environ.get("config_dir", "/config")),
                 **fingerprint_inputs,
             )
@@ -190,11 +197,18 @@ def build_single_package(
         if dst_debian_dir.exists():
             shutil.rmtree(dst_debian_dir)
 
-        # Clean up old .obj-* directories and .deb files
+        # Clean up old .obj-* directories and .deb/.ddeb files.
+        # dh_builddeb emits into pkg_dir.parent, so stale artifacts must be
+        # removed there or find_deb_file below may pick up an old version.
         for obj_dir in pkg_dir.glob(".obj-*"):
             shutil.rmtree(obj_dir)
-        for old_deb in pkg_dir.glob(f"ros-{ros_distro}-{pkg_name_dashed}_*.deb"):
-            old_deb.unlink()
+        suffix_part = f"-{package_suffix}" if package_suffix else ""
+        artifact_stem = f"ros-{ros_distro}-{pkg_name_dashed}{suffix_part}"
+        for old_artifact in (
+            *pkg_dir.parent.glob(f"{artifact_stem}_*.deb"),
+            *pkg_dir.parent.glob(f"{artifact_stem}-dbgsym_*.ddeb"),
+        ):
+            old_artifact.unlink()
 
         # Clean up debhelper state files from source debian directory
         # These files cause dh to skip configure/build phases if left from a previous run
@@ -216,24 +230,23 @@ def build_single_package(
         env["COLCON_INSTALL_PATH"] = colcon_install_path
         env["DEB_BUILD_OPTIONS"] = f"parallel={per_pkg_parallel}"
 
-        result = subprocess.run(
-            ["fakeroot", "debian/rules", "binary"],
-            cwd=pkg_dir,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-
-        log_file.write_text(
-            result.stdout + ("\n--- STDERR ---\n" + result.stderr if result.stderr else "")
-        )
+        # Stream output directly to the log file so it survives OOM kills
+        # and interrupts mid-build (this is the full compile step).
+        with open(log_file, "w") as log_fh:
+            result = subprocess.run(
+                ["fakeroot", "debian/rules", "binary"],
+                cwd=pkg_dir,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                env=env,
+            )
 
         if result.returncode != 0:
             return BuildResult(
                 package=pkg_name,
                 pkg_dir=pkg_dir,
                 status=BuildStatus.FAILED,
-                error=f"fakeroot failed with exit code {result.returncode}",
+                error=f"fakeroot failed with exit code {result.returncode} (see {log_file})",
             )
 
         # Find and move .deb file
@@ -329,6 +342,9 @@ def main() -> int:
     # Set environment variable for build_single_package to use
     os.environ["COLCON2DEB_PER_PKG_PARALLEL"] = str(per_pkg_parallel)
 
+    # Join the orchestrator's event stream for per-package TUI progress
+    events.attach(get_env_path("output_dir"))
+
     # Process packages in parallel
     results: list[BuildResult] = []
 
@@ -357,6 +373,10 @@ def main() -> int:
                 result = future.result()
                 results.append(result)
 
+                if result.status != BuildStatus.SKIPPED:
+                    events.package_complete(
+                        8, pkg_name, success=result.status == BuildStatus.SUCCESS
+                    )
                 if result.status == BuildStatus.FAILED:
                     pkg_log = log_packages_dir / pkg_name / "build_deb.log"
                     print(
@@ -365,6 +385,7 @@ def main() -> int:
                     )
             except Exception as e:
                 print(f"error: exception building {pkg_name}: {e}", file=sys.stderr)
+                events.package_complete(8, pkg_name, success=False)
                 results.append(
                     BuildResult(
                         package=pkg_name,
@@ -385,9 +406,7 @@ def main() -> int:
 
     # Summary
     if failed:
-        print(
-            f"Built {len(successful)}/{len(packages)} packages ({len(failed)} failed, {len(skipped)} cached)"
-        )
+        print(f"Built {len(successful)} packages ({len(skipped)} cached, {len(failed)} failed)")
         for r in results:
             if r.status == BuildStatus.FAILED:
                 print(f"  - {r.package}: {r.error}")
