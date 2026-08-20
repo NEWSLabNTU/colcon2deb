@@ -314,10 +314,16 @@ def fingerprint_env() -> Path:
     """Persistent temp dir shared across all fingerprint tests (one class).
 
     Contains a private copy of the fixture workspace so tests can mutate
-    sources without touching the shared fixtures.
+    sources without touching the shared fixtures. The cpp package's
+    directory is renamed so its basename differs from the package name —
+    fingerprinting once assumed they match and hashed a nonexistent path,
+    making source changes invisible.
     """
     tmp = Path(tempfile.mkdtemp(prefix="colcon2deb-fp-"))
     shutil.copytree(WORKSPACE_DIR, tmp / "workspace")
+    (tmp / "workspace" / "src" / "test_cpp_pkg").rename(
+        tmp / "workspace" / "src" / "cpp-dir-renamed"
+    )
     return tmp
 
 
@@ -364,7 +370,7 @@ class TestFingerprinting:
         place — the rebuild must happen anyway.
         """
         cpp_main = (
-            fingerprint_env / "workspace" / "src" / "test_cpp_pkg" / "src" / "test_node.cpp"
+            fingerprint_env / "workspace" / "src" / "cpp-dir-renamed" / "src" / "test_node.cpp"
         )
         assert cpp_main.exists()
         cpp_main.write_text(cpp_main.read_text() + "\n// fingerprint test modification\n")
