@@ -243,7 +243,10 @@ def build_single_package(
         env = os.environ.copy()
         env["ROS_INSTALL_PREFIX"] = ros_install_prefix
         env["COLCON_INSTALL_PATH"] = colcon_install_path
-        env["DEB_BUILD_OPTIONS"] = f"parallel={per_pkg_parallel}"
+        deb_build_options = f"parallel={per_pkg_parallel}"
+        if os.environ.get("COLCON2DEB_SKIP_TESTS") == "1":
+            deb_build_options += " nocheck"
+        env["DEB_BUILD_OPTIONS"] = deb_build_options
 
         # Stream output directly to the log file so it survives OOM kills
         # and interrupts mid-build (this is the full compile step).

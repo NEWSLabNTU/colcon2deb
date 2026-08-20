@@ -190,6 +190,7 @@ build:                           # optional
   package_suffix: "1.0.0"        # optional: ros-humble-pkg-1.0.0 naming
   parallel_jobs: 4               # default: 0 = auto-detect from CPU count
   use_nvidia_runtime: false      # default: false
+  skip_tests: false              # true = -DBUILD_TESTING=OFF + DEB_BUILD_OPTIONS=nocheck
   pipeline: true                 # default: true — run colcon build and
                                  # packaging concurrently; false = serial phases
 ```

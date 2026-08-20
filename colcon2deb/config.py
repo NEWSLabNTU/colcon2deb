@@ -26,7 +26,7 @@ _BUILD_KEYS = {
     "parallel_jobs",
     "use_nvidia_runtime",
     "pipeline",
-    "skip_tests",  # accepted but unused; warned about below
+    "skip_tests",
 }
 
 
@@ -51,6 +51,7 @@ class BuildConfig:
     parallel_jobs: int
     use_nvidia_runtime: bool
     pipeline: bool
+    skip_tests: bool
     warnings: list[str] = field(default_factory=lambda: [])
 
 
@@ -183,6 +184,12 @@ def validate_config(config: Any, config_dir: Path) -> BuildConfig:
     if not isinstance(pipeline, bool):
         raise ConfigError(f"build.pipeline must be true or false, got {pipeline!r}")
 
+    # Skip building/running tests: -DBUILD_TESTING=OFF for the colcon pass
+    # and DEB_BUILD_OPTIONS=nocheck for the dh pass.
+    skip_tests = build.get("skip_tests", False)
+    if not isinstance(skip_tests, bool):
+        raise ConfigError(f"build.skip_tests must be true or false, got {skip_tests!r}")
+
     # Warn about unknown keys — silently ignored settings mislead users
     for key in config:
         if key not in _TOP_LEVEL_KEYS:
@@ -196,9 +203,6 @@ def validate_config(config: Any, config_dir: Path) -> BuildConfig:
         for key in section:
             if key not in known:
                 warnings.append(f"Unknown config key '{section_name}.{key}' is ignored")
-    if "skip_tests" in build:
-        warnings.append("Config key 'build.skip_tests' is ignored (tests are never run)")
-
     return BuildConfig(
         image=image,
         dockerfile=dockerfile,
@@ -213,5 +217,6 @@ def validate_config(config: Any, config_dir: Path) -> BuildConfig:
         parallel_jobs=parallel_jobs,
         use_nvidia_runtime=use_nvidia_runtime,
         pipeline=pipeline,
+        skip_tests=skip_tests,
         warnings=warnings,
     )

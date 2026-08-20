@@ -145,6 +145,21 @@ class TestBuildSection:
         with pytest.raises(ConfigError, match="install_prefix"):
             _validate(c)
 
+    def test_skip_tests_defaults_false(self) -> None:
+        cfg = _validate(dict(MINIMAL))
+        assert cfg.skip_tests is False
+
+    def test_skip_tests_true_accepted_without_warning(self) -> None:
+        """skip_tests is a real setting now (BUILD_TESTING=OFF + nocheck),
+        not a dead key."""
+        cfg = _validate({**MINIMAL, "build": {"skip_tests": True}})
+        assert cfg.skip_tests is True
+        assert cfg.warnings == []
+
+    def test_skip_tests_must_be_bool(self) -> None:
+        with pytest.raises(ConfigError, match="skip_tests"):
+            _validate({**MINIMAL, "build": {"skip_tests": "yes"}})
+
     def test_pipeline_defaults_true(self) -> None:
         cfg = _validate(dict(MINIMAL))
         assert cfg.pipeline is True
@@ -183,8 +198,8 @@ class TestUnknownKeys:
         assert any("workspace_dir" in w for w in cfg.warnings)
 
     def test_unknown_build_keys_warn(self) -> None:
-        cfg = _validate({**MINIMAL, "build": {"skip_tests": True}})
-        assert any("skip_tests" in w for w in cfg.warnings)
+        cfg = _validate({**MINIMAL, "build": {"made_up_key": True}})
+        assert any("made_up_key" in w for w in cfg.warnings)
 
     def test_known_keys_do_not_warn(self) -> None:
         cfg = _validate(dict(MINIMAL))

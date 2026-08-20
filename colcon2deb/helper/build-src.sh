@@ -7,6 +7,9 @@ cd "$colcon_work_dir"
 if [ "$colcon_build" = y ]; then
     # Build cmake args: always include Release build type
     cmake_args="-DCMAKE_BUILD_TYPE=Release"
+    if [ "${COLCON2DEB_SKIP_TESTS:-0}" = "1" ]; then
+        cmake_args="$cmake_args -DBUILD_TESTING=OFF"
+    fi
     if [ -n "$COLCON2DEB_CMAKE_ARGS" ]; then
         cmake_args="$cmake_args $COLCON2DEB_CMAKE_ARGS"
     fi
