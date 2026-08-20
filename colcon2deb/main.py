@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -24,8 +25,7 @@ from typing import Any
 
 __version__ = version("colcon2deb")
 
-import yaml
-
+from .config import ConfigError, load_config_file, validate_config
 from .events import EVENT_FILE
 from .ui import BuildUI
 
@@ -66,7 +66,12 @@ def stop_container(container_id: str, force: bool = False) -> None:
 
 
 def signal_handler(signum: int, frame: FrameType | None) -> None:
-    """Handle interrupt signals with escalating force."""
+    """Handle interrupt signals with escalating force.
+
+    docker stop can block for many seconds; running it in a background
+    thread keeps the terminal responsive so a second Ctrl+C escalates
+    immediately.
+    """
     global _interrupt_count
 
     with _interrupt_lock:
@@ -81,11 +86,11 @@ def signal_handler(signum: int, frame: FrameType | None) -> None:
             file=sys.stderr,
         )
         if container:
-            stop_container(container, force=False)
+            threading.Thread(target=stop_container, args=(container, False), daemon=True).start()
     elif count == 2:
         print("\n\nReceived second interrupt. Force stopping...", file=sys.stderr)
         if container:
-            stop_container(container, force=True)
+            threading.Thread(target=stop_container, args=(container, True), daemon=True).start()
     else:
         print("\n\nReceived third interrupt. Forcing immediate exit...", file=sys.stderr)
         if container:
@@ -93,34 +98,67 @@ def signal_handler(signum: int, frame: FrameType | None) -> None:
         sys.exit(130)  # 128 + SIGINT
 
 
-def run_container_with_signal_handling(docker_cmd: list[str], container_name: str) -> int:
-    """Run a Docker container with proper signal handling."""
-    global _container_id, _interrupt_count
+def read_new_events(event_file: Path, position: int) -> tuple[list[dict[str, Any]], int]:
+    """Read newline-terminated events from event_file starting at position.
 
-    # Reset interrupt count
-    with _interrupt_lock:
-        _interrupt_count = 0
-        _container_id = container_name
-
-    # Set up signal handler
-    original_handler = signal.signal(signal.SIGINT, signal_handler)
-
+    Returns the parsed events and the new byte position. A partially
+    written trailing line is left in place for the next call, so no
+    event is ever half-read and dropped.
+    """
     try:
-        process = subprocess.Popen(docker_cmd)
-        return_code = process.wait()
-        return return_code
+        with open(event_file, "rb") as f:
+            f.seek(position)
+            chunk = f.read()
+    except OSError:
+        return [], position
 
-    except Exception as e:
-        print(f"Error running container: {e}", file=sys.stderr)
-        return 1
+    events: list[dict[str, Any]] = []
+    consumed = 0
+    while True:
+        newline = chunk.find(b"\n", consumed)
+        if newline == -1:
+            break
+        line = chunk[consumed:newline].decode("utf-8", errors="replace").strip()
+        consumed = newline + 1
+        if line:
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    return events, position + consumed
+
+
+def _run_container_plain(docker_cmd: list[str], container_name: str) -> int:
+    """Run the container streaming raw output — for non-TTY environments.
+
+    The container's own line-oriented progress output narrates the build;
+    no Rich Live display, no event tailing, no 4 Hz frame dumps in CI logs.
+    """
+    process = subprocess.Popen(
+        docker_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        bufsize=1,
+    )
+    try:
+        if process.stdout:
+            for line in process.stdout:
+                print(_ANSI_ESCAPE_RE.sub("", line.rstrip()), flush=True)
+        process.wait()
+        return process.returncode
     finally:
-        signal.signal(signal.SIGINT, original_handler)
-        with _interrupt_lock:
-            _container_id = None
+        if process.poll() is None:
+            stop_container(container_name, force=True)
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
 
 
 def run_container_with_tui(docker_cmd: list[str], container_name: str, output_dir: Path) -> int:
-    """Run a Docker container with TUI display.
+    """Run a Docker container with TUI display (plain streaming when not a TTY).
 
     Args:
         docker_cmd: Docker command to run
@@ -139,73 +177,70 @@ def run_container_with_tui(docker_cmd: list[str], container_name: str, output_di
 
     # Set up signal handler
     original_handler = signal.signal(signal.SIGINT, signal_handler)
-
-    # Initialize UI
-    ui = BuildUI()
-    ui.add_phase("phase1", "Phase 1: Preparing working directories")
-    ui.add_phase("phase2", "Phase 2: Copying source files")
-    ui.add_phase("phase3", "Phase 3: Installing dependencies")
-    ui.add_phase("phase4", "Phase 4: Compiling packages")
-    ui.add_phase("phase5", "Phase 5: Generating rosdep list")
-    ui.add_phase("phase6", "Phase 6: Creating package list")
-    ui.add_phase("phase7", "Phase 7: Generating Debian metadata")
-    ui.add_phase("phase8", "Phase 8: Building Debian packages")
-
-    event_file = output_dir / EVENT_FILE
-    stop_event = threading.Event()
-
-    # Clear events file from previous run
-    if event_file.exists():
-        event_file.unlink()
-
-    def handle_event(event: dict[str, Any]) -> None:
-        """Process an event and update UI."""
-        etype = event.get("type", "")
-        if etype == "phase_start":
-            phase_id = f"phase{event.get('phase', 0)}"
-            ui.start_phase(phase_id)
-        elif etype == "phase_complete":
-            phase_id = f"phase{event.get('phase', 0)}"
-            ui.complete_phase(phase_id, event.get("success", True))
-        elif etype == "phase_skip":
-            phase_id = f"phase{event.get('phase', 0)}"
-            ui.skip_phase(phase_id)
-        elif etype == "package_start":
-            phase_id = f"phase{event.get('phase', 0)}"
-            ui.add_package(phase_id, event.get("package", ""))
-        elif etype == "package_complete":
-            phase_id = f"phase{event.get('phase', 0)}"
-            ui.complete_package(phase_id, event.get("package", ""), event.get("success", True))
-
-    def tail_events() -> None:
-        """Background thread to tail event file and update UI."""
-        position = 0
-        while not stop_event.is_set():
-            if event_file.exists():
-                try:
-                    with open(event_file) as f:
-                        f.seek(position)
-                        for line in f:
-                            line = line.strip()
-                            if line:
-                                try:
-                                    event = json.loads(line)
-                                    handle_event(event)
-                                    ui.refresh()
-                                except json.JSONDecodeError:
-                                    pass
-                        position = f.tell()
-                except OSError:
-                    pass
-            time.sleep(0.1)
-
-    def periodic_refresh() -> None:
-        """Background thread to periodically refresh UI for elapsed time updates."""
-        while not stop_event.is_set():
-            ui.refresh()
-            time.sleep(0.25)  # Refresh 4 times per second
+    process: subprocess.Popen[str] | None = None
 
     try:
+        if not sys.stdout.isatty():
+            return _run_container_plain(docker_cmd, container_name)
+
+        # Initialize UI
+        ui = BuildUI()
+        ui.add_phase("phase1", "Phase 1: Preparing working directories")
+        ui.add_phase("phase2", "Phase 2: Copying source files")
+        ui.add_phase("phase3", "Phase 3: Installing dependencies")
+        ui.add_phase("phase4", "Phase 4: Compiling packages")
+        ui.add_phase("phase5", "Phase 5: Generating rosdep list")
+        ui.add_phase("phase6", "Phase 6: Creating package list")
+        ui.add_phase("phase7", "Phase 7: Generating Debian metadata")
+        ui.add_phase("phase8", "Phase 8: Building Debian packages")
+
+        event_file = output_dir / EVENT_FILE
+        stop_event = threading.Event()
+
+        # Clear events file from previous run
+        if event_file.exists():
+            event_file.unlink()
+
+        def handle_event(event: dict[str, Any]) -> None:
+            """Process an event and update UI."""
+            etype = event.get("type", "")
+            phase_id = f"phase{event.get('phase', 0)}"
+            if etype == "phase_start":
+                ui.start_phase(phase_id)
+            elif etype == "phase_complete":
+                ui.complete_phase(phase_id, event.get("success", True))
+            elif etype == "phase_skip":
+                ui.skip_phase(phase_id)
+            elif etype == "package_start":
+                ui.add_package(phase_id, event.get("package", ""))
+            elif etype == "package_complete":
+                ui.complete_package(phase_id, event.get("package", ""), event.get("success", True))
+            # build_start / build_complete / log carry no extra UI state:
+            # phase events already cover the display.
+
+        event_position = 0
+
+        def drain_events() -> None:
+            """Consume all complete event lines currently in the file."""
+            nonlocal event_position
+            events, event_position = read_new_events(event_file, event_position)
+            for event in events:
+                handle_event(event)
+            if events:
+                ui.refresh()
+
+        def tail_events() -> None:
+            """Background thread to tail event file and update UI."""
+            while not stop_event.is_set():
+                drain_events()
+                time.sleep(0.1)
+
+        def periodic_refresh() -> None:
+            """Background thread to periodically refresh UI for elapsed time updates."""
+            while not stop_event.is_set():
+                ui.refresh()
+                time.sleep(0.25)  # Refresh 4 times per second
+
         # Start event tailer thread
         tailer = threading.Thread(target=tail_events, daemon=True)
         tailer.start()
@@ -220,6 +255,7 @@ def run_container_with_tui(docker_cmd: list[str], container_name: str, output_di
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            errors="replace",
             bufsize=1,  # Line buffered
         )
 
@@ -234,9 +270,14 @@ def run_container_with_tui(docker_cmd: list[str], container_name: str, output_di
 
             process.wait()
 
-        stop_event.set()
-        tailer.join(timeout=1)
-        refresher.join(timeout=1)
+            stop_event.set()
+            tailer.join(timeout=1)
+            refresher.join(timeout=1)
+
+            # Final drain: pick up events written after the tailer's last
+            # poll (typically phase 8 completion and build_complete).
+            drain_events()
+            ui.refresh()
 
         return process.returncode
 
@@ -244,10 +285,17 @@ def run_container_with_tui(docker_cmd: list[str], container_name: str, output_di
         print(f"Error running container: {e}", file=sys.stderr)
         return 1
     finally:
-        stop_event.set()
         signal.signal(signal.SIGINT, original_handler)
         with _interrupt_lock:
             _container_id = None
+        # Never leave the container building in the background if the
+        # display loop died (e.g. a Rich rendering error).
+        if process is not None and process.poll() is None:
+            stop_container(container_name, force=True)
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
 
 
 class _RunCommandResult:
@@ -349,8 +397,14 @@ def run_command(
         return result
 
 
-def download_dockerfile(url: str, cache_dir: str | Path | None = None) -> Path:
-    """Download Dockerfile from HTTP/HTTPS URL."""
+def download_dockerfile(
+    url: str, cache_dir: str | Path | None = None, refresh: bool = False
+) -> Path:
+    """Download Dockerfile from HTTP/HTTPS URL.
+
+    Downloads are cached by URL; pass refresh=True to bypass the cache
+    and re-download (the CLI exposes this as --refresh-dockerfile).
+    """
     cached_file: Path | None = None
 
     # Create cache directory if specified
@@ -363,7 +417,11 @@ def download_dockerfile(url: str, cache_dir: str | Path | None = None) -> Path:
         cached_file = cache_dir / f"Dockerfile.{url_hash}"
 
         # Check if cached file exists
-        if cached_file.exists():
+        if cached_file.exists() and not refresh:
+            print(
+                f"Using cached Dockerfile for {url}\n"
+                f"  (cached at {cached_file}; pass --refresh-dockerfile to re-download)"
+            )
             return cached_file
 
     try:
@@ -452,25 +510,22 @@ def build_image_from_dockerfile(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / "docker_build.log"
 
-    run_command(cmd, log_file=log_file, stream_output=True)
-    return image_name
-
-
-def load_config(config_path: str | Path) -> dict[str, Any]:
-    """Load configuration from YAML file."""
-    config_path = Path(config_path).resolve()
-    if not config_path.exists():
-        print(f"Error: Config file not found at {config_path}", file=sys.stderr)
+    try:
+        run_command(cmd, log_file=log_file, stream_output=True)
+    except FileNotFoundError:
+        print(
+            "Error: 'docker' command not found. Install Docker and ensure it is on PATH.",
+            file=sys.stderr,
+        )
         sys.exit(1)
-
-    with open(config_path) as f:
-        try:
-            config = yaml.safe_load(f)
-        except yaml.YAMLError as e:
-            print(f"Error parsing config file: {e}", file=sys.stderr)
-            sys.exit(1)
-
-    return config
+    except subprocess.CalledProcessError:
+        where = f" (see {log_file})" if log_file else ""
+        print(f"Error: Docker image build failed{where}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\nInterrupted during Docker image build", file=sys.stderr)
+        sys.exit(130)
+    return image_name
 
 
 def main():
@@ -489,6 +544,12 @@ def main():
         "--config",
         required=True,
         help="Path to configuration YAML file",
+    )
+
+    parser.add_argument(
+        "--refresh-dockerfile",
+        action="store_true",
+        help="Re-download a remote Dockerfile instead of using the cached copy",
     )
 
     # Skip options for incremental builds
@@ -526,46 +587,61 @@ def main():
     # Parse arguments
     args = parser.parse_args()
 
-    # Load configuration
-    config = load_config(args.config)
+    # Load and validate configuration
+    try:
+        raw_config = load_config_file(args.config)
+        cfg = validate_config(raw_config, Path(args.config).resolve().parent)
+    except ConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    # Validate config version
-    if config.get("version") != 1:
+    for warning in cfg.warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
+
+    # Validate all paths before any expensive work (Docker builds can take
+    # a long time; a typo'd path must fail immediately).
+    if shutil.which("docker") is None:
         print(
-            f"Error: Unsupported config version: {config.get('version')}",
+            "Error: 'docker' command not found. Install Docker and ensure it is on PATH.",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    # Get docker configuration
-    docker_config = config.get("docker", {})
-    if "image" in docker_config and "dockerfile" in docker_config:
+    workspace_dir = Path(args.workspace).resolve()
+    if not workspace_dir.is_dir():
+        print(f"Error: Workspace directory not found at {workspace_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    packages_dir = cfg.packages_dir
+    if not packages_dir.is_dir():
         print(
-            "Error: Cannot specify both 'image' and 'dockerfile' in config",
+            f"Error: Packages config directory not found at {packages_dir}",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    if "image" not in docker_config and "dockerfile" not in docker_config:
+    # Get the script directory (where this script is located)
+    script_dir = Path(__file__).resolve().parent
+
+    # Helper directory is inside the colcon2deb package
+    helper_dir = script_dir / "helper"
+    if not helper_dir.exists():
+        print("Error: Helper scripts directory not found", file=sys.stderr)
+        print(f"Expected at: {helper_dir}", file=sys.stderr)
         print(
-            "Error: Must specify either 'image' or 'dockerfile' in config",
+            "Helper directory must be inside the colcon2deb package",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    # Get output directory early for logging
-    output_config = config.get("output", {})
-    if "directory" not in output_config:
-        print("Error: 'output.directory' not specified in config", file=sys.stderr)
+    # rosdeb-bloom is the vendored debian generator library inside colcon2deb
+    rosdeb_bloom_dir = script_dir / "rosdeb-bloom"
+    if not rosdeb_bloom_dir.exists():
+        print("Error: rosdeb-bloom directory not found", file=sys.stderr)
+        print(f"Expected at: {rosdeb_bloom_dir}", file=sys.stderr)
         sys.exit(1)
 
-    output_dir = Path(output_config["directory"])
-    if not output_dir.is_absolute():
-        # Relative to config file
-        output_dir = Path(args.config).parent / output_dir
-
-    # Ensure absolute path for Docker
-    output_dir = output_dir.resolve()
+    output_dir = cfg.output_dir
 
     # Create output directory and timestamped log directory
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -592,20 +668,29 @@ def main():
 
     # Create/update 'latest' symlink
     latest_link = log_base_dir / "latest"
-    if latest_link.is_symlink() or latest_link.exists():
+    if latest_link.is_symlink():
         latest_link.unlink()
-    latest_link.symlink_to(log_timestamp)
+    if latest_link.exists():
+        print(
+            f"Warning: {latest_link} exists and is not a symlink; not updating it",
+            file=sys.stderr,
+        )
+    else:
+        latest_link.symlink_to(log_timestamp)
 
     # Determine the image to use
-    if "dockerfile" in docker_config:
-        dockerfile_value = docker_config["dockerfile"]
+    config_dir_path = Path(args.config).resolve().parent
+    if cfg.dockerfile is not None:
+        dockerfile_value = cfg.dockerfile
 
         # Check if it's a URL
         if dockerfile_value.startswith(("http://", "https://")):
             # Download Dockerfile from URL
             # Use cache directory in user's home or temp
             cache_dir = Path.home() / ".cache" / "colcon2deb" / "dockerfiles"
-            dockerfile_path = download_dockerfile(dockerfile_value, cache_dir)
+            dockerfile_path = download_dockerfile(
+                dockerfile_value, cache_dir, refresh=args.refresh_dockerfile
+            )
 
             # For remote Dockerfiles, use a minimal build context
             with tempfile.TemporaryDirectory(prefix="colcon2deb_context_") as temp_context:
@@ -616,35 +701,33 @@ def main():
 
                 image_name = build_image_from_dockerfile(
                     temp_dockerfile,
-                    docker_config.get("image_name", "colcon2deb_builder"),
+                    cfg.image_name,
                     build_context=temp_context,
                     log_dir=log_dir,
-                    platform=docker_config.get("platform"),
+                    platform=cfg.platform,
                 )
         else:
-            # Local Dockerfile path
+            # Local Dockerfile path, relative to the config file
             dockerfile_path = Path(dockerfile_value)
             if not dockerfile_path.is_absolute():
-                # Relative to config file
-                dockerfile_path = Path(args.config).parent / dockerfile_path
-            # Ensure absolute path
+                dockerfile_path = config_dir_path / dockerfile_path
             dockerfile_path = dockerfile_path.resolve()
 
             # Check if a build context is specified
-            build_context = docker_config.get("build_context")
-            if build_context:
-                if not Path(build_context).is_absolute():
-                    build_context = Path(args.config).parent / build_context
+            build_context: str | Path | None = cfg.build_context
+            if build_context and not Path(build_context).is_absolute():
+                build_context = config_dir_path / build_context
 
             image_name = build_image_from_dockerfile(
                 dockerfile_path,
-                docker_config.get("image_name", "colcon2deb_builder"),
+                cfg.image_name,
                 build_context=build_context,
                 log_dir=log_dir,
-                platform=docker_config.get("platform"),
+                platform=cfg.platform,
             )
     else:
-        image_name = docker_config["image"]
+        assert cfg.image is not None
+        image_name = cfg.image
 
     # Capture Docker image ID for fingerprinting
     try:
@@ -658,79 +741,15 @@ def main():
     except Exception:
         docker_image_id = "unknown"
 
-    # Verify workspace directory exists
-    workspace_dir = Path(args.workspace).resolve()
-    if not workspace_dir.exists():
-        print(f"Error: Workspace directory not found at {workspace_dir}", file=sys.stderr)
-        sys.exit(1)
-
     # Get current user/group IDs
     uid = os.getuid()
     gid = os.getgid()
 
-    # Get the script directory (where this script is located)
-    script_dir = Path(__file__).resolve().parent
-
-    # Helper directory is inside the colcon2deb package
-    helper_dir = script_dir / "helper"
-
-    if not helper_dir.exists():
-        print("Error: Helper scripts directory not found", file=sys.stderr)
-        print(f"Expected at: {helper_dir}", file=sys.stderr)
-        print(
-            "Helper directory must be inside the colcon2deb package",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    # Get packages configuration directory
-    packages_config = config.get("packages", {})
-    if "directory" not in packages_config:
-        print("Error: 'packages.directory' not specified in config", file=sys.stderr)
-        sys.exit(1)
-
-    packages_dir = Path(packages_config["directory"])
-    if not packages_dir.is_absolute():
-        # Relative to config file
-        packages_dir = Path(args.config).parent / packages_dir
-
-    # Ensure absolute path for Docker
-    packages_dir = packages_dir.resolve()
-
-    if not packages_dir.exists():
-        print(
-            f"Error: Packages config directory not found at {packages_dir}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    # output_dir was already set up earlier for logging
-    # The build_deb directory will be created inside the output directory
-    # Users will find packages in output_dir/dist/
-
-    # Get build configuration
-    build_config = config.get("build", {})
-    ros_distro = build_config.get("ros_distro", "humble")
-
-    # Get install prefix configuration (optional)
-    # Default: /opt/ros/{ros_distro}
-    install_prefix = build_config.get("install_prefix", f"/opt/ros/{ros_distro}")
-
-    # Get package suffix configuration (optional)
-    # Example: "1.5.0" results in packages like ros-humble-autoware-utils-1.5.0
-    package_suffix = build_config.get("package_suffix")
-
-    # Get parallel jobs configuration (optional)
-    # Controls total parallelism during deb packaging phase
-    # Default: 0 (auto-calculate based on CPU count)
-    parallel_jobs = build_config.get("parallel_jobs", 0)
-
-    # rosdeb-bloom is the vendored debian generator library inside colcon2deb
-    rosdeb_bloom_dir = script_dir / "rosdeb-bloom"
-    if not rosdeb_bloom_dir.exists():
-        print("Error: rosdeb-bloom directory not found", file=sys.stderr)
-        print(f"Expected at: {rosdeb_bloom_dir}", file=sys.stderr)
-        sys.exit(1)
+    # Build settings (validated earlier)
+    ros_distro = cfg.ros_distro
+    install_prefix = cfg.install_prefix
+    package_suffix = cfg.package_suffix
+    parallel_jobs = cfg.parallel_jobs
 
     # Generate unique container name for this build run
     run_id = uuid.uuid4().hex[:8]
@@ -797,8 +816,7 @@ def main():
         docker_cmd.append("--skip-build-deb")
 
     # Add nvidia runtime if available and requested in config
-    use_nvidia = build_config.get("use_nvidia_runtime", False)
-    if use_nvidia:
+    if cfg.use_nvidia_runtime:
         docker_cmd.insert(4, "--runtime")
         docker_cmd.insert(5, "nvidia")
 

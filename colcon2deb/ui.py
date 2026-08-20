@@ -88,107 +88,72 @@ class BuildUI:
     phase_order: list[str] = field(default_factory=lambda: list[str]())
     current_phase: str | None = None
     log_lines: deque[str] = field(default_factory=lambda: deque(maxlen=15))
-    log_file: Path | None = None
     _live: Live | None = None
-    _log_thread: threading.Thread | None = None
-    _stop_log_thread: bool = False
-    _log_position: int = 0
     _spinner_frame: int = 0
+    # State is mutated by the event tailer thread and rendered by the
+    # refresher and main threads; one coarse lock keeps frames consistent.
+    _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def add_phase(self, phase_id: str, description: str) -> None:
         """Add a new phase to track."""
-        self.phases[phase_id] = Phase(name=phase_id, description=description)
-        self.phase_order.append(phase_id)
+        with self._lock:
+            self.phases[phase_id] = Phase(name=phase_id, description=description)
+            self.phase_order.append(phase_id)
 
-    def start_phase(self, phase_id: str, log_file: Path | None = None) -> None:
-        """Mark a phase as running and optionally start tailing a log file."""
-        if phase_id in self.phases:
-            self.phases[phase_id].status = PhaseStatus.RUNNING
-            self.phases[phase_id].start_time = time.time()
-            self.current_phase = phase_id
-
-        # Stop any existing log thread
-        self._stop_log_tail()
-
-        # Start new log tail if file provided
-        if log_file:
-            self.log_file = log_file
-            self.log_lines.clear()
-            self._log_position = 0
-            self._start_log_tail()
+    def start_phase(self, phase_id: str) -> None:
+        """Mark a phase as running."""
+        with self._lock:
+            if phase_id in self.phases:
+                self.phases[phase_id].status = PhaseStatus.RUNNING
+                self.phases[phase_id].start_time = time.time()
+                self.current_phase = phase_id
 
     def complete_phase(self, phase_id: str, success: bool = True) -> None:
         """Mark a phase as completed or failed."""
-        if phase_id in self.phases:
-            self.phases[phase_id].status = PhaseStatus.COMPLETED if success else PhaseStatus.FAILED
-            self.phases[phase_id].end_time = time.time()
-            if self.current_phase == phase_id:
-                self.current_phase = None
-
-        self._stop_log_tail()
+        with self._lock:
+            if phase_id in self.phases:
+                self.phases[phase_id].status = (
+                    PhaseStatus.COMPLETED if success else PhaseStatus.FAILED
+                )
+                self.phases[phase_id].end_time = time.time()
+                if self.current_phase == phase_id:
+                    self.current_phase = None
 
     def skip_phase(self, phase_id: str) -> None:
         """Mark a phase as skipped."""
-        if phase_id in self.phases:
-            self.phases[phase_id].status = PhaseStatus.SKIPPED
-            self.phases[phase_id].end_time = time.time()
+        with self._lock:
+            if phase_id in self.phases:
+                self.phases[phase_id].status = PhaseStatus.SKIPPED
+                self.phases[phase_id].end_time = time.time()
 
     def add_package(self, phase_id: str, package: str) -> None:
         """Add a package sub-item to a phase."""
+        with self._lock:
+            self._add_package_locked(phase_id, package, PhaseStatus.RUNNING)
+
+    def _add_package_locked(self, phase_id: str, package: str, status: PhaseStatus) -> None:
         if phase_id in self.phases:
             phase = self.phases[phase_id]
-            # Check if package already exists
             for pkg in phase.packages:
                 if pkg.name == package:
-                    pkg.status = PhaseStatus.RUNNING
+                    pkg.status = status
                     return
-            phase.packages.append(Package(name=package, status=PhaseStatus.RUNNING))
+            phase.packages.append(Package(name=package, status=status))
 
     def complete_package(self, phase_id: str, package: str, success: bool = True) -> None:
-        """Mark a package as complete."""
-        if phase_id in self.phases:
-            phase = self.phases[phase_id]
-            for pkg in phase.packages:
-                if pkg.name == package:
-                    pkg.status = PhaseStatus.COMPLETED if success else PhaseStatus.FAILED
-                    return
+        """Mark a package as complete, adding it if it was never started.
+
+        Container scripts may emit only package_complete events, so an
+        unknown package is added with its final status instead of being
+        silently dropped.
+        """
+        with self._lock:
+            status = PhaseStatus.COMPLETED if success else PhaseStatus.FAILED
+            self._add_package_locked(phase_id, package, status)
 
     def update_log(self, line: str) -> None:
         """Add a line to the log display."""
         self.log_lines.append(line.rstrip())
-
-    def _start_log_tail(self) -> None:
-        """Start a background thread to tail the log file."""
-        if not self.log_file:
-            return
-
-        self._stop_log_thread = False
-        self._log_thread = threading.Thread(target=self._tail_log, daemon=True)
-        self._log_thread.start()
-
-    def _stop_log_tail(self) -> None:
-        """Stop the log tailing thread."""
-        self._stop_log_thread = True
-        if self._log_thread and self._log_thread.is_alive():
-            self._log_thread.join(timeout=0.5)
-        self._log_thread = None
-        self.log_file = None
-
-    def _tail_log(self) -> None:
-        """Background thread function to tail log file."""
-        while not self._stop_log_thread:
-            if self.log_file and self.log_file.exists():
-                try:
-                    with open(self.log_file) as f:
-                        f.seek(self._log_position)
-                        new_lines = f.readlines()
-                        if new_lines:
-                            for line in new_lines:
-                                self.log_lines.append(line.rstrip())
-                            self._log_position = f.tell()
-                except OSError:
-                    pass
-            time.sleep(0.2)
 
     def _render_phases(self) -> Text:
         """Render the phase list with status indicators."""
@@ -231,8 +196,13 @@ class BuildUI:
 
             text.append("\n")
 
-            # Render packages under this phase (if any)
-            for pkg in phase.packages:
+            # Render packages under this phase. Large workspaces have
+            # hundreds of packages; show failures and active work
+            # individually, summarize the completed bulk.
+            completed = [p for p in phase.packages if p.status == PhaseStatus.COMPLETED]
+            visible = [p for p in phase.packages if p.status != PhaseStatus.COMPLETED]
+            display = visible[-8:] + completed[-3:]
+            for pkg in display:
                 text.append("    ")  # Indent
                 if pkg.status == PhaseStatus.COMPLETED:
                     text.append("✓ ", style="green")
@@ -245,6 +215,14 @@ class BuildUI:
                     text.append("○ ", style="dim")
                 text.append(pkg.name, style="dim" if pkg.status == PhaseStatus.COMPLETED else None)
                 text.append("\n")
+            hidden = len(phase.packages) - len(display)
+            if hidden > 0:
+                failed_count = sum(1 for p in phase.packages if p.status == PhaseStatus.FAILED)
+                summary = f"    … {hidden} more ({len(completed)} done"
+                if failed_count:
+                    summary += f", {failed_count} failed"
+                summary += ")\n"
+                text.append(summary, style="dim")
 
         return text
 
@@ -261,7 +239,7 @@ class BuildUI:
             if i < len(self.log_lines) - 1:
                 log_text.append("\n")
 
-        title = f"Log: {self.log_file.name}" if self.log_file else "Log"
+        title = "Log"
         return Panel(
             log_text,
             title=title,
@@ -297,9 +275,10 @@ class BuildUI:
 
     def refresh(self) -> None:
         """Manually refresh the display."""
-        self._spinner_frame += 1
-        if self._live:
-            self._live.update(self._render())
+        with self._lock:
+            self._spinner_frame += 1
+            if self._live:
+                self._live.update(self._render())
 
 
 class SimpleBuildUI:
