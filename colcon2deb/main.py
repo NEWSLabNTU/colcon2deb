@@ -98,6 +98,29 @@ def signal_handler(signum: int, frame: FrameType | None) -> None:
         sys.exit(130)  # 128 + SIGINT
 
 
+def check_docker_prereqs() -> str | None:
+    """Verify docker exists and its daemon is reachable.
+
+    Returns an error message, or None when everything is usable. Runs
+    before any expensive work so a stopped daemon or missing install
+    fails in seconds, not after minutes of setup.
+    """
+    if shutil.which("docker") is None:
+        return "'docker' command not found. Install Docker and ensure it is on PATH."
+    try:
+        result = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        return "Docker daemon did not respond within 30s (is it running?)"
+    if result.returncode != 0:
+        detail = (result.stderr or "").strip().splitlines()
+        hint = f": {detail[-1]}" if detail else ""
+        return (
+            "Docker daemon is not reachable (is it running? do you have permission "
+            f"to use it?){hint}"
+        )
+    return None
+
+
 def read_new_events(event_file: Path, position: int) -> tuple[list[dict[str, Any]], int]:
     """Read newline-terminated events from event_file starting at position.
 
@@ -600,11 +623,9 @@ def main():
 
     # Validate all paths before any expensive work (Docker builds can take
     # a long time; a typo'd path must fail immediately).
-    if shutil.which("docker") is None:
-        print(
-            "Error: 'docker' command not found. Install Docker and ensure it is on PATH.",
-            file=sys.stderr,
-        )
+    docker_error = check_docker_prereqs()
+    if docker_error is not None:
+        print(f"Error: {docker_error}", file=sys.stderr)
         sys.exit(1)
 
     workspace_dir = Path(args.workspace).resolve()

@@ -113,9 +113,11 @@ echo "Installing build dependencies..."
 apt-get update -qq
 apt-get install -y -qq parallel fakeroot debhelper dh-python rsync > /dev/null
 
-# Install pip packages
+# Install pip packages. Newer images mark the system Python externally
+# managed (PEP 668); the container is ephemeral, so overriding is safe.
 echo "Installing rosdeb-bloom and rich..."
-pip install --quiet /rosdeb-bloom rich
+pip install --quiet /rosdeb-bloom rich 2>/dev/null \
+    || pip install --quiet --break-system-packages /rosdeb-bloom rich
 
 # Create a script to run as the builder user
 _entry_tmpdir=$(mktemp -d)
@@ -137,6 +139,18 @@ skip_opts="$@"
 if [ -f "/colcon2deb-setup.sh" ]; then
     echo "Sourcing /colcon2deb-setup.sh..."
     source /colcon2deb-setup.sh
+fi
+
+# Verify the image provides the ROS build toolchain before doing any work
+missing=""
+for cmd in python3 colcon rosdep cmake; do
+    command -v "$cmd" >/dev/null 2>&1 || missing="$missing $cmd"
+done
+if [ -n "$missing" ]; then
+    echo "error: builder image is missing required commands:$missing" >&2
+    echo "hint: base your Dockerfile on a ROS image (e.g. FROM ros:humble)," >&2
+    echo "      or install ros-dev-tools and source the ROS setup in /colcon2deb-setup.sh" >&2
+    exit 1
 fi
 
 # Update rosdep as user

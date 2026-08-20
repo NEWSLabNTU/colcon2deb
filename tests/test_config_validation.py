@@ -204,3 +204,36 @@ class TestUnknownKeys:
     def test_known_keys_do_not_warn(self) -> None:
         cfg = _validate(dict(MINIMAL))
         assert cfg.warnings == []
+
+
+class TestDockerPrereqCheck:
+    """check_docker_prereqs must catch missing binary and dead daemon
+    before any expensive work."""
+
+    def _with_fake_docker(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_code: int) -> None:
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        fake = bin_dir / "docker"
+        fake.write_text(f"#!/bin/sh\nexit {exit_code}\n")
+        fake.chmod(0o755)
+        monkeypatch.setenv("PATH", str(bin_dir))
+
+    def test_missing_docker_binary(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from colcon2deb.main import check_docker_prereqs
+
+        monkeypatch.setenv("PATH", str(tmp_path))  # empty dir on PATH
+        err = check_docker_prereqs()
+        assert err is not None and "not found" in err
+
+    def test_daemon_unreachable(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from colcon2deb.main import check_docker_prereqs
+
+        self._with_fake_docker(tmp_path, monkeypatch, exit_code=1)
+        err = check_docker_prereqs()
+        assert err is not None and "daemon" in err.lower()
+
+    def test_docker_ok(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from colcon2deb.main import check_docker_prereqs
+
+        self._with_fake_docker(tmp_path, monkeypatch, exit_code=0)
+        assert check_docker_prereqs() is None
