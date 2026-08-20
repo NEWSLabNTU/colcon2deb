@@ -19,4 +19,3 @@ packages:
 build:
   ros_distro: humble
   parallel_jobs: 4
-  skip_tests: true

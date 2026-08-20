@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -69,18 +70,21 @@ def _prepare_config(config_name: str, output_dir: Path) -> Path:
     return config_dst
 
 
-def _run_build(config_name: str, tmp_dir: Path | None = None) -> Path:
+def _run_build(
+    config_name: str, tmp_dir: Path | None = None, workspace: Path | None = None
+) -> Path:
     """Run colcon2deb with a fixture config and return the build output dir.
 
     If tmp_dir is provided, reuse it (for multi-run fingerprint tests).
-    Otherwise create a fresh temp dir.
+    Otherwise create a fresh temp dir. workspace overrides the shared
+    fixture workspace (for tests that mutate sources).
     """
     tmp = tmp_dir or Path(tempfile.mkdtemp(prefix="colcon2deb-integ-"))
     config = _prepare_config(config_name, tmp)
 
     cmd = [
         "uv", "run", "colcon2deb",
-        "--workspace", str(WORKSPACE_DIR),
+        "--workspace", str(workspace or WORKSPACE_DIR),
         "--config", str(config),
     ]
     result = subprocess.run(
@@ -307,8 +311,14 @@ class TestCustomPrefixBuild:
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="class")
 def fingerprint_env() -> Path:
-    """Persistent temp dir shared across all fingerprint tests (one class)."""
-    return Path(tempfile.mkdtemp(prefix="colcon2deb-fp-"))
+    """Persistent temp dir shared across all fingerprint tests (one class).
+
+    Contains a private copy of the fixture workspace so tests can mutate
+    sources without touching the shared fixtures.
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="colcon2deb-fp-"))
+    shutil.copytree(WORKSPACE_DIR, tmp / "workspace")
+    return tmp
 
 
 class TestFingerprinting:
@@ -316,61 +326,76 @@ class TestFingerprinting:
 
     def test_01_first_build(self, fingerprint_env: Path) -> None:
         """First build: both packages should be built (not cached)."""
-        build_dir = _run_build("integ_default_prefix.yaml", fingerprint_env)
+        build_dir = _run_build(
+            "integ_default_prefix.yaml", fingerprint_env, fingerprint_env / "workspace"
+        )
         successful, skipped = _parse_build_counts(build_dir)
         assert successful == 2, f"Expected 2 built, got {successful} built + {skipped} cached"
         assert skipped == 0
 
     def test_02_fingerprints_written(self, fingerprint_env: Path) -> None:
-        """After first build, each package should have a .fingerprint.json."""
+        """After first build, each package has per-stage fingerprint files."""
         packaging = fingerprint_env / "build" / "packaging"
         for pkg in ["test_cpp_pkg", "test_py_pkg"]:
-            fp_file = packaging / pkg / ".fingerprint.json"
-            assert fp_file.exists(), f"Missing fingerprint for {pkg}"
-            data = json.loads(fp_file.read_text())
-            assert "fingerprint" in data
-            assert "source_hash" in data
-            assert "docker_image_id" in data
+            for stage in ["debian", "deb"]:
+                fp_file = packaging / pkg / f".fingerprint.{stage}.json"
+                assert fp_file.exists(), f"Missing {stage} fingerprint for {pkg}"
+                data = json.loads(fp_file.read_text())
+                assert "fingerprint" in data
+                assert "source_hash" in data
+                assert "docker_image_id" in data
 
     def test_03_second_build_all_cached(self, fingerprint_env: Path) -> None:
         """Second build with no changes: all packages should be cached."""
-        build_dir = _run_build("integ_default_prefix.yaml", fingerprint_env)
+        build_dir = _run_build(
+            "integ_default_prefix.yaml", fingerprint_env, fingerprint_env / "workspace"
+        )
         successful, skipped = _parse_build_counts(build_dir)
         assert successful == 0, f"Expected 0 built, got {successful}"
         assert skipped == 2, f"Expected 2 cached, got {skipped}"
 
     def test_04_source_change_triggers_rebuild(self, fingerprint_env: Path) -> None:
-        """Modifying source code should trigger rebuild of that package."""
-        # Modify a source file in the workspace copy (inside the build dir)
-        workspace_src = fingerprint_env / "build" / "workspace" / "src"
-        cpp_main = workspace_src / "test_cpp_pkg" / "src" / "test_node.cpp"
-        if cpp_main.exists():
-            cpp_main.write_text(
-                cpp_main.read_text() + "\n// fingerprint test modification\n"
-            )
+        """Modifying source code must rebuild that package's .deb.
 
-        # Delete the .deb so it can be rebuilt
-        debs = fingerprint_env / "build" / "debs"
-        for deb in debs.glob("ros-humble-test-cpp-pkg_*"):
-            deb.unlink()
+        Regression test: the old shared fingerprint file let phase 7 mark the
+        new fingerprint before phase 8 checked it, so the stale .deb was kept.
+        The source is edited in the *mounted* workspace (the copy inside the
+        build dir gets rsync-restored from it) and the old .deb is left in
+        place — the rebuild must happen anyway.
+        """
+        cpp_main = (
+            fingerprint_env / "workspace" / "src" / "test_cpp_pkg" / "src" / "test_node.cpp"
+        )
+        assert cpp_main.exists()
+        cpp_main.write_text(cpp_main.read_text() + "\n// fingerprint test modification\n")
 
-        build_dir = _run_build("integ_default_prefix.yaml", fingerprint_env)
+        old_deb = next(
+            (fingerprint_env / "build" / "debs").glob("ros-humble-test-cpp-pkg_*.deb")
+        )
+        old_mtime = old_deb.stat().st_mtime
+
+        build_dir = _run_build(
+            "integ_default_prefix.yaml", fingerprint_env, fingerprint_env / "workspace"
+        )
         successful, skipped = _parse_build_counts(build_dir)
         # test_cpp_pkg rebuilt, test_py_pkg cached
-        assert successful >= 1, f"Expected at least 1 rebuilt, got {successful}"
+        assert successful == 1, f"Expected 1 rebuilt, got {successful}"
+        assert skipped == 1, f"Expected 1 cached, got {skipped}"
+
+        new_deb = next(
+            (fingerprint_env / "build" / "debs").glob("ros-humble-test-cpp-pkg_*.deb")
+        )
+        assert new_deb.stat().st_mtime > old_mtime, "stale .deb was not replaced"
 
     def test_05_override_change_triggers_rebuild(self, fingerprint_env: Path) -> None:
-        """Modifying a debian-override should trigger rebuild."""
-        # Create a debian-override for test_py_pkg
+        """Adding a debian-override must rebuild that package (old .deb kept in place)."""
         override_dir = fingerprint_env / "debian-overrides" / "test_py_pkg"
         override_dir.mkdir(parents=True, exist_ok=True)
         (override_dir / "marker.txt").write_text("trigger rebuild\n")
 
-        # Delete the .deb so it can be rebuilt
-        debs = fingerprint_env / "build" / "debs"
-        for deb in debs.glob("ros-humble-test-py-pkg_*"):
-            deb.unlink()
-
-        build_dir = _run_build("integ_default_prefix.yaml", fingerprint_env)
+        build_dir = _run_build(
+            "integ_default_prefix.yaml", fingerprint_env, fingerprint_env / "workspace"
+        )
         successful, skipped = _parse_build_counts(build_dir)
-        assert successful >= 1, f"Expected at least 1 rebuilt, got {successful}"
+        assert successful == 1, f"Expected 1 rebuilt, got {successful}"
+        assert skipped == 1, f"Expected 1 cached, got {skipped}"

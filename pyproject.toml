@@ -118,4 +118,4 @@ markers = [
     "network: requires network access (may be flaky)",
 ]
 timeout = 10
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not network'"

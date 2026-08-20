@@ -19,9 +19,10 @@ def _network_available() -> bool:
 
 @pytest.mark.network
 @pytest.mark.timeout(30)
-@pytest.mark.skipif(not _network_available(), reason="Network unavailable")
 def test_download(tmp_path: Path) -> None:
     """Test downloading a Dockerfile from a URL."""
+    if not _network_available():
+        pytest.skip("Network unavailable")
     test_url = "https://raw.githubusercontent.com/NEWSLabNTU/autoware-build-images/refs/heads/main/0.45.1/amd64/Dockerfile"
 
     # Test without cache
