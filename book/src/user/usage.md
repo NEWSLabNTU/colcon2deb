@@ -32,12 +32,9 @@ colcon2deb --workspace /path/to/ros_ws --config config.yaml
 Pre-configured examples are available:
 
 ```bash
-cd examples/autoware-2025.02-amd64
+cd examples/simple-example
 
-# Prepare workspace
-git clone --branch 2025.02-ws https://github.com/NEWSLabNTU/autoware.git source
-cd source && vcs import src < autoware.repos && cd ..
-
+# Prepare workspace (see the example's README)
 # Build
 just build
 ```
@@ -48,18 +45,21 @@ After a successful build:
 
 ```
 build/
-├── dist/
-│   ├── ros-humble-package1_1.0.0-0noble_amd64.deb
-│   ├── ros-humble-package2_1.0.0-0noble_amd64.deb
+├── debs/
+│   ├── ros-humble-package1_1.0.0-0jammy_amd64.deb
+│   ├── ros-humble-package2_1.0.0-0jammy_amd64.deb
 │   └── ...
-└── log/
-    └── build.log
+└── logs/
+    └── latest/
+        ├── phases/     # one log per build phase
+        ├── packages/   # per-package logs
+        └── reports/    # summary.txt, successful.txt, failed.txt, skipped.txt
 ```
 
 Install packages with:
 
 ```bash
-sudo dpkg -i build/dist/*.deb
+sudo dpkg -i build/debs/*.deb
 ```
 
 ## Common Options
@@ -68,6 +68,5 @@ sudo dpkg -i build/dist/*.deb
 |--------|-------------|
 | `--workspace` | Path to colcon workspace |
 | `--config` | Path to config.yaml |
-| `--packages-select` | Build specific packages only |
 
 Run `colcon2deb --help` for all options.

@@ -38,15 +38,15 @@ install-dev:
     @echo "Installed. Use 'uv run colcon2deb --help' to test."
 
 # Build Debian packages from workspace
-build-workspace workspace output *args:
+build-workspace workspace config *args:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Building Debian packages..."
     echo "  Workspace: {{workspace}}"
-    echo "  Output: {{output}}"
-    uv run python -m colcon2deb.main \
+    echo "  Config: {{config}}"
+    uv run colcon2deb \
         --workspace {{workspace}} \
-        --output {{output}} \
+        --config {{config}} \
         {{args}}
 
 # Build packages for an example directory
@@ -59,21 +59,22 @@ build-example example:
         echo "Please prepare the workspace first. See README.md"
         exit 1
     fi
-    uv run python -m colcon2deb.main \
+    uv run colcon2deb \
         --workspace source \
-        --output build
+        --config config.yaml
 
 # Run unit tests (fast, no Docker)
 test:
     uv run pytest tests/ -v
 
 # Run all tests including integration (requires Docker)
+# Timeout must cover a cold docker image pull + full fixture build.
 test-all:
-    uv run pytest tests/ -v -m '' --timeout=120
+    uv run pytest tests/ -v -m '' --timeout=900
 
 # Run integration tests only (requires Docker)
 test-integ:
-    uv run pytest tests/ -v -m integration --timeout=120 || test $? -eq 5
+    uv run pytest tests/ -v -m integration --timeout=900 || test $? -eq 5
 
 # Run lint, format, and type checks
 check:

@@ -26,24 +26,30 @@ docker:
 output:
   directory: ./build
 
+# Directory holding optional per-package debian/ overrides.
+# Must exist (an empty directory is fine).
+packages:
+  directory: ./debian-overrides
+
 build:
   ros_distro: humble
 ```
 
-2. Run the build:
+2. Create the overrides directory and run the build:
 
 ```bash
+mkdir -p debian-overrides
 colcon2deb --workspace /path/to/ros_ws --config config.yaml
 ```
 
-3. Find packages in `./build/dist/`.
+3. Find packages in `./build/debs/`.
 
 ## Examples
 
-See `examples/` for pre-configured Autoware builds:
+See `examples/` for pre-configured builds:
 
 ```bash
-cd examples/autoware-2025.02-amd64
+cd examples/simple-example
 # Prepare workspace (see example README)
 just build
 ```

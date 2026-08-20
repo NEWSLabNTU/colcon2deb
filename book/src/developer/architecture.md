@@ -19,7 +19,6 @@ colcon2deb/
 │       ├── main.py          # Container orchestrator
 │       ├── build_deb.py     # Package builder
 │       └── generate_debian_dir.py
-├── templates/               # Debian templates
 ├── examples/                # Example configurations
 ├── tests/                   # Test suite
 ├── pyproject.toml           # Package config

@@ -119,7 +119,6 @@ git push origin vX.Y.Z
   - `rosdeb-bloom/` - Vendored Debian generator (pip-installed in container)
     - `rosdeb_bloom/` - Modified bloom package with install prefix support
     - `rosdeb_bloom/generators/debian/templates/` - Debian packaging templates
-- `templates/` - Templates for package generation
 - `tests/` - Test suite
 - `examples/` - Example configurations
   - `simple-example/` - Simple test workspace
@@ -133,16 +132,18 @@ git push origin vX.Y.Z
 2. Container mounts workspace, output dir, helper scripts, and rosdeb-bloom
 3. Container entry point (`helper/entry.sh`) pip installs rosdeb-bloom and sets up user
 4. `helper/main.py` orchestrates the build phases:
-   - Phase 1-3: Setup directories, copy sources
+   - Phase 1: Prepare working directories
+   - Phase 2: Copy source files
+   - Phase 3: Install rosdep dependencies
    - Phase 4: Build workspace with colcon
-   - Phase 5: Install rosdep dependencies
-   - Phase 6: Generate rosdep mappings
+   - Phase 5: Generate rosdep list
+   - Phase 6: Create package list
    - Phase 7: Generate debian directories (using rosdeb_bloom)
    - Phase 8: Build .deb packages
 
 ### Key Design Principles
 - **No ROS on host** - Only Python and Docker required
-- **Read-only source mounts** - Prevents accidental modifications
+- **Sources copied before build** - The workspace is rsync'd into the output directory; builds never modify the original sources
 - **Isolated builds** - Everything runs in Docker containers
 - **Custom install prefix** - Configurable via `install_prefix` in config.yaml
 - **Package suffix support** - Append version suffix to package names via `package_suffix`
@@ -151,41 +152,37 @@ git push origin vX.Y.Z
 
 ## Configuration File Format
 
+The schema is validated by `colcon2deb/config.py`. Required keys: `version: 1`,
+`docker.image` XOR `docker.dockerfile`, `output.directory`, `packages.directory`.
+The workspace is NOT a config key — it comes from the `--workspace` CLI flag.
+Relative paths are resolved against the config file's directory.
+
 ```yaml
-# Basic configuration with Dockerfile
-workspace_dir: ./source
-output_dir: ./build
-dockerfile: Dockerfile
+version: 1                       # required, must be 1
 
-# With remote Dockerfile
-workspace_dir: ./source
-output_dir: ./build
-dockerfile: https://example.com/Dockerfile
+docker:                          # required: exactly one of image / dockerfile
+  image: my-builder:latest       # prebuilt image, OR:
+  # dockerfile: ./Dockerfile     # local path or https:// URL
+  # image_name: my-builder      # name for the built image (default: colcon2deb_builder)
+  # build_context: .            # docker build context (default: Dockerfile's dir)
+  # platform: linux/arm64       # for cross-builds
 
-# With prebuilt image
-workspace_dir: ./source
-output_dir: ./build
-image: my-builder:latest
+output:
+  directory: ./build             # required: build output directory
 
-# With custom install prefix (default: /opt/ros/{ros_distro})
-workspace_dir: ./source
-output_dir: ./build
-image: my-builder:latest
-install_prefix: /opt/autoware/custom
+packages:
+  directory: ./debian-overrides  # required: per-package debian/ overrides
+                                 # (must exist; empty dir is fine)
 
-# With package suffix (e.g., ros-humble-pkg-1.0.0 instead of ros-humble-pkg)
-workspace_dir: ./source
-output_dir: ./build
-image: my-builder:latest
-install_prefix: /opt/myproject
-package_suffix: "1.0.0"
-
-# With parallel jobs (default: auto-detect based on CPU count)
-workspace_dir: ./source
-output_dir: ./build
-image: my-builder:latest
-parallel_jobs: 4  # Limits parallelism across all build phases
+build:                           # optional
+  ros_distro: humble             # default: humble
+  install_prefix: /opt/ros/humble  # default: /opt/ros/{ros_distro}; must be absolute
+  package_suffix: "1.0.0"        # optional: ros-humble-pkg-1.0.0 naming
+  parallel_jobs: 4               # default: 0 = auto-detect from CPU count
+  use_nvidia_runtime: false      # default: false
 ```
+
+Unknown keys are warned about and ignored.
 
 ## Important Files
 
@@ -265,9 +262,12 @@ Logs are organized in `build/logs/latest/`:
 
 ### Common Issues
 
-1. **debian-overrides caching**: If changing `install_prefix`, delete cached debian directories:
+1. **Stale caches from colcon2deb ≤ 0.4.1**: Older versions cached bloom output
+   into the user's `debian-overrides/` directory, where it shadowed regeneration.
+   Current versions never write there — `packages.directory` is user input only.
+   If upgrading from an old version, delete any auto-generated cache once:
    ```bash
-   rm -rf debian-overrides/*/debian/
+   rm -rf debian-overrides/*/debian/   # only if you did not write them yourself
    ```
 
 2. **rosdeb_bloom import errors**: Ensure rosdeb-bloom is properly pip-installed in container
