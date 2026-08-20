@@ -405,3 +405,38 @@ class TestFingerprinting:
         successful, skipped = _parse_build_counts(build_dir)
         assert successful == 1, f"Expected 1 rebuilt, got {successful}"
         assert skipped == 1, f"Expected 1 cached, got {skipped}"
+
+
+# ---------------------------------------------------------------------------
+# Test case 4: Pipelined execution
+# Phase 4 (colcon) and phases 5-8 (packaging) run concurrently by default;
+# build.pipeline: false restores strict ordering.
+# ---------------------------------------------------------------------------
+def _phase_events(build_dir: Path) -> list[dict]:
+    events_file = build_dir / ".events.jsonl"
+    return [
+        json.loads(line)
+        for line in events_file.read_text().splitlines()
+        if line.strip()
+    ]
+
+
+def _event_ts(events: list[dict], etype: str, phase: int) -> str:
+    for e in events:
+        if e.get("type") == etype and e.get("phase") == phase:
+            return e["timestamp"]
+    raise AssertionError(f"no {etype} event for phase {phase}")
+
+
+class TestPipelinedExecution:
+    def test_packaging_overlaps_colcon_build(self, default_build: Path) -> None:
+        """Pipelined (default): phase 5 starts while phase 4 is still running."""
+        events = _phase_events(default_build)
+        assert _event_ts(events, "phase_start", 5) < _event_ts(events, "phase_complete", 4)
+
+    def test_serial_mode_restores_ordering(self) -> None:
+        """build.pipeline: false — packaging waits for colcon to finish."""
+        build_dir = _run_build("integ_serial.yaml")
+        assert len(list((build_dir / "debs").glob("*.deb"))) == 2
+        events = _phase_events(build_dir)
+        assert _event_ts(events, "phase_start", 5) > _event_ts(events, "phase_complete", 4)

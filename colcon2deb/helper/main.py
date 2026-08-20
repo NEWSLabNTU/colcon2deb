@@ -18,10 +18,12 @@ import argparse
 import os
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
 import events
+from colcon_events import snapshot_build_dirs
 
 
 class SimpleBuildUI:
@@ -133,34 +135,6 @@ def run_python_script(
         sys.stdout.flush()
         sys.stderr.flush()
         return result.returncode == 0
-
-
-def capture_ros_env(setup_bash: Path) -> dict[str, str] | None:
-    """Source a setup.bash and return the resulting environment.
-
-    Uses `env -0` (NUL-separated) so multi-line values such as exported
-    bash functions cannot corrupt the parsed environment. Returns None if
-    the file is missing or sourcing fails.
-    """
-    if not setup_bash.exists():
-        return None
-    result = subprocess.run(
-        ["bash", "-c", 'source "$1" && env -0', "_", str(setup_bash)],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return None
-    env: dict[str, str] = {}
-    for entry in result.stdout.split("\0"):
-        if not entry or "=" not in entry:
-            continue
-        key, _, value = entry.partition("=")
-        # Skip exported bash functions (BASH_FUNC_name%%=() {...)
-        if key.startswith("BASH_FUNC_"):
-            continue
-        env[key] = value
-    return env
 
 
 def count_lines(file_path: Path) -> int:
@@ -424,34 +398,67 @@ def main() -> int:
         events.phase_complete(phase_num, success=True)
         return True
 
-    # Phase 1-4: Core build
+    # Phase 1-3: Setup
     run_phase(1, "Preparing working directories", "prepare.sh")
     run_phase(2, "Copying source files", "copy-src.sh")
     run_phase(3, "Installing dependencies", "install-deps.sh")
-    run_phase(4, "Compiling packages", "build-src.sh")
 
-    # Source setup.bash for subsequent phases. Phases 5-8 need the workspace
-    # environment; proceeding without it produces confusing rosdep/bloom
-    # errors, so a missing or broken setup.bash is a hard failure.
-    if last_failing_phase is None:
-        setup_bash = colcon_work_dir / "install" / "setup.bash"
-        ros_env = capture_ros_env(setup_bash)
-        if ros_env is None:
-            print(
-                f"error: cannot source workspace environment from {setup_bash}",
-                file=sys.stderr,
-            )
-            if not setup_bash.exists():
-                print(
-                    "hint: the workspace has not been built here; "
-                    "run without --skip-colcon-build first",
-                    file=sys.stderr,
-                )
-            last_failing_phase = "Workspace environment setup (install/setup.bash)"
-        else:
-            env.update(ros_env)
+    # Phase 4: Compiling packages.
+    #
+    # Pipelined mode (default): colcon runs in a background thread while
+    # phases 5-7 proceed — they need only the base ROS environment, not
+    # the workspace build. Phase 8 then gates each package's .deb build on
+    # colcon having finished that package (its dependencies are complete
+    # by then; the dh build recompiles the package itself from source and
+    # resolves dependencies by sourcing local_setup.bash at build time).
+    pipeline = (
+        env.get("COLCON2DEB_PIPELINE", "1") == "1"
+        and not args.skip_colcon_build
+        and last_failing_phase is None
+    )
 
-    # Phase 5-6: Dependency resolution
+    colcon_status_file = output_dir / ".colcon.status"
+    colcon_status_file.unlink(missing_ok=True)
+    colcon_result: dict[str, bool] = {}
+    colcon_thread: threading.Thread | None = None
+
+    def run_colcon_phase() -> None:
+        phase_id = "phase4"
+        log_file = log_phases_dir / "phase4_build_src.log"
+        ui.start_phase(phase_id)
+        events.phase_start(4, "Compiling packages")
+        ok = False
+        try:
+            ok = run_script("build-src.sh", script_dir, env, log_file=log_file)
+        finally:
+            # The status file must always be written — the phase-8 gate
+            # blocks on it if colcon dies without per-package events.
+            ui.complete_phase(phase_id, success=ok)
+            events.phase_complete(4, success=ok)
+            colcon_result["ok"] = ok
+            try:
+                colcon_status_file.write_text("0" if ok else "1")
+            except OSError:
+                pass
+
+    if pipeline:
+        # Snapshot colcon's log dirs before launching so the phase-8 gate
+        # can identify this run's events.log among previous runs'.
+        exclude_dirs = snapshot_build_dirs(colcon_work_dir / "log")
+        env["COLCON2DEB_PIPELINE"] = "1"
+        env["COLCON2DEB_COLCON_LOG_BASE"] = str(colcon_work_dir / "log")
+        env["COLCON2DEB_COLCON_STATUS_FILE"] = str(colcon_status_file)
+        env["COLCON2DEB_COLCON_EXCLUDE"] = ",".join(sorted(exclude_dirs))
+        colcon_thread = threading.Thread(target=run_colcon_phase, daemon=True)
+        colcon_thread.start()
+    else:
+        env["COLCON2DEB_PIPELINE"] = "0"
+        if last_failing_phase is None:
+            run_colcon_phase()
+            if colcon_result.get("ok") is False:
+                last_failing_phase = "Phase 4: Compiling packages"
+
+    # Phase 5-6: Dependency resolution (source-only; no build needed)
     run_phase(5, "Generating rosdep list", "create-rosdep-list.sh")
     run_phase(6, "Creating package list", "create-package-list.sh")
 
@@ -481,6 +488,18 @@ def main() -> int:
         else:
             ui.skip_phase("phase8")
             events.phase_skip(8)
+
+    # Join the colcon thread (pipelined mode); phase 8's per-package gate
+    # already blocked on colcon results, so this normally returns at once.
+    if colcon_thread is not None:
+        colcon_thread.join()
+    if colcon_result.get("ok") is False and last_failing_phase is None:
+        last_failing_phase = "Phase 4: Compiling packages"
+    if colcon_result.get("ok") and not (colcon_work_dir / "install" / "setup.bash").exists():
+        print(
+            "warning: colcon build succeeded but install/setup.bash is missing",
+            file=sys.stderr,
+        )
 
     events.build_complete(success=(last_failing_phase is None))
 

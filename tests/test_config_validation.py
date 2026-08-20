@@ -145,6 +145,18 @@ class TestBuildSection:
         with pytest.raises(ConfigError, match="install_prefix"):
             _validate(c)
 
+    def test_pipeline_defaults_true(self) -> None:
+        cfg = _validate(dict(MINIMAL))
+        assert cfg.pipeline is True
+
+    def test_pipeline_false_accepted(self) -> None:
+        cfg = _validate({**MINIMAL, "build": {"pipeline": False}})
+        assert cfg.pipeline is False
+
+    def test_pipeline_must_be_bool(self) -> None:
+        with pytest.raises(ConfigError, match="pipeline"):
+            _validate({**MINIMAL, "build": {"pipeline": "yes"}})
+
     def test_values_pass_through(self) -> None:
         c = {
             **MINIMAL,

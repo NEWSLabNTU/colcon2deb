@@ -773,6 +773,8 @@ def main():
         "-e",
         f"COLCON2DEB_PARALLEL_JOBS={parallel_jobs}",
         "-e",
+        f"COLCON2DEB_PIPELINE={'1' if cfg.pipeline else '0'}",
+        "-e",
         f"COLCON2DEB_VERSION={__version__}",
         "-e",
         f"COLCON2DEB_IMAGE_ID={docker_image_id}",

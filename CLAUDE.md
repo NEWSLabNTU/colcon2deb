@@ -141,6 +141,16 @@ git push origin vX.Y.Z
    - Phase 7: Generate debian directories (using rosdeb_bloom)
    - Phase 8: Build .deb packages
 
+**Pipelined execution** (default, `build.pipeline: true`): phase 4 runs in a
+background thread while phases 5-7 proceed — they only need sources and the
+base ROS environment. Phase 8 gates each package's .deb build on colcon
+having finished that package (tracked via colcon's per-run
+`log/build_<ts>/events.log`; see `helper/colcon_events.py`), because the dh
+build recompiles the package from source and only needs its *dependencies*
+present in the workspace install tree. Wall-clock is roughly
+`max(colcon, packaging)` instead of their sum. `build.pipeline: false`
+restores strict phase ordering.
+
 ### Key Design Principles
 - **No ROS on host** - Only Python and Docker required
 - **Sources copied before build** - The workspace is rsync'd into the output directory; builds never modify the original sources
@@ -180,6 +190,8 @@ build:                           # optional
   package_suffix: "1.0.0"        # optional: ros-humble-pkg-1.0.0 naming
   parallel_jobs: 4               # default: 0 = auto-detect from CPU count
   use_nvidia_runtime: false      # default: false
+  pipeline: true                 # default: true — run colcon build and
+                                 # packaging concurrently; false = serial phases
 ```
 
 Unknown keys are warned about and ignored.

@@ -23,6 +23,7 @@ from enum import Enum
 from pathlib import Path
 
 import events
+from colcon_events import ColconGate
 
 
 class BuildStatus(Enum):
@@ -121,6 +122,7 @@ def build_single_package(
     package_suffix: str | None = None,
     log_packages_dir: Path | None = None,
     fingerprint_inputs: dict[str, str] | None = None,
+    colcon_gate: ColconGate | None = None,
 ) -> BuildResult:
     """Build a single Debian package.
 
@@ -179,6 +181,19 @@ def build_single_package(
                     status=BuildStatus.SKIPPED,
                     deb_file=existing_deb,
                 )
+
+        # Pipelined build: wait until colcon has finished this package (its
+        # dependencies are then guaranteed present in the install tree).
+        # Cached packages skip above without waiting.
+        if colcon_gate is not None and not colcon_gate.wait(pkg_name):
+            error_msg = "colcon build failed before this package finished; .deb build skipped"
+            log_file.write_text(error_msg + "\n")
+            return BuildResult(
+                package=pkg_name,
+                pkg_dir=pkg_dir,
+                status=BuildStatus.FAILED,
+                error=error_msg,
+            )
 
         # Check debian directory exists in work dir
         src_debian_dir = pkg_work_dir / "debian"
@@ -345,6 +360,19 @@ def main() -> int:
     # Join the orchestrator's event stream for per-package TUI progress
     events.attach(get_env_path("output_dir"))
 
+    # Pipelined build: gate each package on colcon completing it. The
+    # orchestrator provides the colcon log dir, the pre-run snapshot of
+    # build_* dirs, and a status file it writes when colcon exits.
+    colcon_gate: ColconGate | None = None
+    if os.environ.get("COLCON2DEB_PIPELINE") == "1":
+        exclude_env = os.environ.get("COLCON2DEB_COLCON_EXCLUDE", "")
+        colcon_gate = ColconGate(
+            log_base=Path(os.environ["COLCON2DEB_COLCON_LOG_BASE"]),
+            status_file=Path(os.environ["COLCON2DEB_COLCON_STATUS_FILE"]),
+            exclude_dirs=set(filter(None, exclude_env.split(","))),
+        )
+        colcon_gate.start()
+
     # Process packages in parallel
     results: list[BuildResult] = []
 
@@ -363,6 +391,7 @@ def main() -> int:
                 package_suffix,
                 log_packages_dir,
                 fp_inputs,
+                colcon_gate,
             ): pkg_name
             for pkg_name, pkg_dir in packages
         }
@@ -394,6 +423,9 @@ def main() -> int:
                         error=str(e),
                     )
                 )
+
+    if colcon_gate is not None:
+        colcon_gate.stop()
 
     # Write status files
     successful = [r.package for r in results if r.status == BuildStatus.SUCCESS]

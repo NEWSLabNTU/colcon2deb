@@ -25,6 +25,7 @@ _BUILD_KEYS = {
     "package_suffix",
     "parallel_jobs",
     "use_nvidia_runtime",
+    "pipeline",
     "skip_tests",  # accepted but unused; warned about below
 }
 
@@ -49,6 +50,7 @@ class BuildConfig:
     package_suffix: str | None
     parallel_jobs: int
     use_nvidia_runtime: bool
+    pipeline: bool
     warnings: list[str] = field(default_factory=lambda: [])
 
 
@@ -175,6 +177,12 @@ def validate_config(config: Any, config_dir: Path) -> BuildConfig:
             f"build.use_nvidia_runtime must be true or false, got {use_nvidia_runtime!r}"
         )
 
+    # Pipelined build: run colcon build concurrently with debian generation
+    # and gate each package's .deb build on colcon finishing that package.
+    pipeline = build.get("pipeline", True)
+    if not isinstance(pipeline, bool):
+        raise ConfigError(f"build.pipeline must be true or false, got {pipeline!r}")
+
     # Warn about unknown keys — silently ignored settings mislead users
     for key in config:
         if key not in _TOP_LEVEL_KEYS:
@@ -204,5 +212,6 @@ def validate_config(config: Any, config_dir: Path) -> BuildConfig:
         package_suffix=package_suffix,
         parallel_jobs=parallel_jobs,
         use_nvidia_runtime=use_nvidia_runtime,
+        pipeline=pipeline,
         warnings=warnings,
     )
