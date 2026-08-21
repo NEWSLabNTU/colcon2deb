@@ -254,3 +254,20 @@ class TestGetPackageList:
         ws = self._fake_colcon(tmp_path, monkeypatch)
         names = [name for name, _ in gen_list(ws)]
         assert names == ["ros_pkg"]
+
+
+class TestStaleDebianArtifacts:
+    def test_bloom_precleans_stale_debian_dir(self, env: SimpleNamespace) -> None:
+        """A previous phase-8 run leaves debian/.debhelper (with dangling
+        symlinks) inside the package source copy; generation must clean it
+        instead of crashing while copying the generated debian dir."""
+        stale = env.pkg_dir / "debian" / ".debhelper" / "pkgroot" / "usr" / "share" / "doc"
+        stale.mkdir(parents=True)
+        (stale / "dangling").symlink_to("/nonexistent/target")
+        (env.pkg_dir / "debian" / "control").write_text("stale control\n")
+
+        result = _generate(env)
+        assert result.status == DebianDirStatus.SUCCESS
+        control = (env.pkg_build_dir / "my_pkg" / "debian" / "control").read_text()
+        assert "stale" not in control
+        assert not (env.pkg_build_dir / "my_pkg" / "debian" / ".debhelper").exists()

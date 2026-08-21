@@ -75,3 +75,47 @@ class TestFingerprintPathPerStage:
         assert p_debian != p_deb
         assert p_debian.parent == tmp_path
         assert p_deb.parent == tmp_path
+
+
+class TestHashIgnoresBuildArtifacts:
+    def test_fingerprint_stable_across_deb_build_droppings(self, tmp_path: Path) -> None:
+        """Phase 8 runs fakeroot inside the package source copy, leaving
+        debian/ and .obj-* dirs behind. Those artifacts must not change
+        the source fingerprint, or every run invalidates the cache."""
+        pkg_dir = tmp_path / "src" / "pkg"
+        pkg_dir.mkdir(parents=True)
+        (pkg_dir / "main.cpp").write_text("int main() {}")
+        overrides = tmp_path / "overrides"
+        overrides.mkdir()
+
+        fp1 = compute_fingerprint(
+            pkg_name="pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
+        )
+        # dh build droppings appear
+        (pkg_dir / "debian" / ".debhelper").mkdir(parents=True)
+        (pkg_dir / "debian" / "control").write_text("Package: x\n")
+        (pkg_dir / ".obj-x86_64-linux-gnu").mkdir()
+        (pkg_dir / ".obj-x86_64-linux-gnu" / "a.o").write_text("obj")
+        fp2 = compute_fingerprint(
+            pkg_name="pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
+        )
+        assert fp1["fingerprint"] == fp2["fingerprint"]
+
+    def test_override_debian_dir_still_hashed(self, tmp_path: Path) -> None:
+        """The exclusion applies to the package source dir only — override
+        dirs ARE debian/ content and must keep affecting the fingerprint."""
+        pkg_dir = tmp_path / "src" / "pkg"
+        pkg_dir.mkdir(parents=True)
+        (pkg_dir / "main.cpp").write_text("int main() {}")
+        overrides = tmp_path / "overrides"
+        (overrides / "pkg" / "debian").mkdir(parents=True)
+        (overrides / "pkg" / "debian" / "rules").write_text("v1")
+
+        fp1 = compute_fingerprint(
+            pkg_name="pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
+        )
+        (overrides / "pkg" / "debian" / "rules").write_text("v2")
+        fp2 = compute_fingerprint(
+            pkg_name="pkg", pkg_dir=pkg_dir, overrides_dir=overrides, **FP_DEFAULTS
+        )
+        assert fp1["fingerprint"] != fp2["fingerprint"]

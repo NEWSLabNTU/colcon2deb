@@ -184,6 +184,13 @@ def copy_or_create_debian_dir(
             # Disable ANSI colors in child process for clean output
             disable_ANSI_colors()
 
+            # A previous phase-8 run leaves debian/ (with .debhelper state
+            # and dangling dbgsym symlinks) inside the package source copy;
+            # clean it so stale artifacts never leak into the generated set.
+            stale_debian = pkg_dir / "debian"
+            if stale_debian.exists():
+                shutil.rmtree(stale_debian)
+
             # Ensure ~/.config exists for bloom
             home_config = Path.home() / ".config"
             home_config.mkdir(parents=True, exist_ok=True)

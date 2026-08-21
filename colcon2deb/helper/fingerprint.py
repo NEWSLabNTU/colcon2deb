@@ -13,27 +13,43 @@ import os
 from pathlib import Path
 
 
-def hash_tree(path: Path) -> str:
+def hash_tree(path: Path, exclude_top_level: frozenset[str] = frozenset()) -> str:
     """Compute a deterministic SHA-256 hash of a directory tree.
 
     Hashes (sorted_relative_path, file_content) pairs. Returns a fixed
-    hex string even for missing or empty directories.
+    hex string even for missing or empty directories. Top-level entries
+    whose names match exclude_top_level (or start with an excluded name
+    ending in '-', e.g. '.obj-') are skipped.
     """
     h = hashlib.sha256()
     if not path.is_dir():
         return h.hexdigest()
 
+    def excluded(rel_first: str) -> bool:
+        for name in exclude_top_level:
+            if rel_first == name or (name.endswith("-") and rel_first.startswith(name)):
+                return True
+        return False
+
     entries: list[tuple[str, bytes]] = []
     for f in sorted(path.rglob("*")):
-        if f.is_file():
-            rel = str(f.relative_to(path))
-            entries.append((rel, f.read_bytes()))
+        if f.is_file() and not f.is_symlink():
+            rel = f.relative_to(path)
+            if excluded(rel.parts[0]):
+                continue
+            entries.append((str(rel), f.read_bytes()))
 
-    for rel, content in entries:
-        h.update(rel.encode())
+    for rel_str, content in entries:
+        h.update(rel_str.encode())
         h.update(content)
 
     return h.hexdigest()
+
+
+# Artifacts our own phase 8 leaves inside the package source copy
+# (fakeroot debian/rules runs there): they must not affect the source
+# fingerprint, or every run invalidates the previous run's cache.
+_PKG_DIR_EXCLUDES = frozenset({"debian", ".obj-"})
 
 
 def compute_fingerprint(
@@ -54,7 +70,7 @@ def compute_fingerprint(
     The 'fingerprint' key is a SHA-256 digest of all tracked inputs.
     The remaining keys are stored for human-readable debugging.
     """
-    source_hash = hash_tree(pkg_dir)
+    source_hash = hash_tree(pkg_dir, exclude_top_level=_PKG_DIR_EXCLUDES)
     overrides_hash = hash_tree(overrides_dir / pkg_name)
 
     combined = hashlib.sha256()
