@@ -108,6 +108,15 @@ fi
 mkdir -p /etc/sudoers.d
 echo "$name ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/colcon2deb-builder
 
+# Some packages write into the install prefix at build time (e.g.
+# autoware_system_designer deployments run during dh_auto_build). The
+# container is ephemeral, so making the prefix writable is safe and
+# turns those from hard failures into buildable packages.
+if [ -n "${ROS_INSTALL_PREFIX:-}" ]; then
+    mkdir -p "$ROS_INSTALL_PREFIX"
+    chown "$uid:$gid" "$ROS_INSTALL_PREFIX"
+fi
+
 # Install required dependencies
 echo "Installing build dependencies..."
 apt-get update -qq
