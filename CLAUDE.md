@@ -159,6 +159,10 @@ restores strict phase ordering.
 - **Package suffix support** - Append version suffix to package names via `package_suffix`
 - **Parallel builds** - Configurable via `parallel_jobs` in config.yaml (affects colcon build, debian generation, and package building)
 - **Vendored rosdeb-bloom** - Modified bloom with install prefix and ament_python fixes
+- **Prerequisite checks** - docker binary + daemon verified before any work; the container verifies the image provides python3/colcon/rosdep/cmake and fails with a hint otherwise
+- **Writable install prefix in-container** - entry.sh hands the (ephemeral) install prefix to the build user, tolerating packages that write into it at build time
+- **Pipelined build** - phase 4 (colcon) runs concurrently with phases 5-7; phase 8 gates per package on colcon's events.log (`build.pipeline: false` restores serial order)
+- **Remote Dockerfile caching** - cached by URL; `--refresh-dockerfile` re-downloads
 
 ## Configuration File Format
 
