@@ -271,3 +271,24 @@ class TestStaleDebianArtifacts:
         control = (env.pkg_build_dir / "my_pkg" / "debian" / "control").read_text()
         assert "stale" not in control
         assert not (env.pkg_build_dir / "my_pkg" / "debian" / ".debhelper").exists()
+
+
+class TestFakerootFrontEnd:
+    """Phase 8 must not leave SysV message queues in the container: their
+    teardown with the IPC namespace panics Ubuntu 5.15 hosts."""
+
+    def test_prefers_fakeroot_tcp(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from colcon2deb.helper import build_deb
+
+        monkeypatch.setattr(
+            build_deb.shutil,
+            "which",
+            lambda name: f"/usr/bin/{name}" if name == "fakeroot-tcp" else None,
+        )
+        assert build_deb.fakeroot_command() == "fakeroot-tcp"
+
+    def test_falls_back_to_fakeroot(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from colcon2deb.helper import build_deb
+
+        monkeypatch.setattr(build_deb.shutil, "which", lambda name: None)
+        assert build_deb.fakeroot_command() == "fakeroot"

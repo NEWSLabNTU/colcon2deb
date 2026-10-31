@@ -5,7 +5,7 @@ This script builds .deb packages from ROS packages that have debian/
 directories already generated. It:
 1. Checks for existing .deb files (skips if already built)
 2. Copies debian/ from pkg_build_dir to pkg_dir
-3. Runs fakeroot debian/rules binary
+3. Runs fakeroot debian/rules binary (fakeroot-tcp when available)
 4. Moves output .deb files to release_dir
 
 Uses ThreadPoolExecutor for parallel execution.
@@ -24,6 +24,22 @@ from pathlib import Path
 
 import events
 from colcon_events import ColconGate
+
+
+def fakeroot_command() -> str:
+    """Return the fakeroot front end to run debian/rules under.
+
+    Prefer fakeroot-tcp. The default fakeroot on Debian and Ubuntu is
+    fakeroot-sysv, whose faked daemon keeps its state in SysV message
+    queues. Queues still open when the container exits are freed with the
+    container's IPC namespace, and on Ubuntu's 5.15 kernels that teardown
+    path (free_ipc, msg_exit_ns, freeque) can oops in
+    percpu_counter_add_batch and panic the host: observed twice on an arm64
+    5.15.0-176 server, each time the moment a colcon2deb container exited.
+    fakeroot-tcp talks to faked over a loopback socket and creates no SysV
+    IPC objects, so there is nothing left for that path to free.
+    """
+    return "fakeroot-tcp" if shutil.which("fakeroot-tcp") else "fakeroot"
 
 
 class BuildStatus(Enum):
@@ -252,7 +268,7 @@ def build_single_package(
         # and interrupts mid-build (this is the full compile step).
         with open(log_file, "w") as log_fh:
             result = subprocess.run(
-                ["fakeroot", "debian/rules", "binary"],
+                [fakeroot_command(), "debian/rules", "binary"],
                 cwd=pkg_dir,
                 stdout=log_fh,
                 stderr=subprocess.STDOUT,
