@@ -49,3 +49,60 @@ class TestEventsAttach:
         lines = (tmp_path / ".events.jsonl").read_text().splitlines()
         types = [json.loads(ln)["type"] for ln in lines if ln.strip()]
         assert types == ["phase_start", "package_complete"]
+
+
+class TestColconTreeImageStamp:
+    """Phase 4 must not reuse a colcon tree built under another image."""
+
+    BUILD_SRC = HELPER_DIR / "build-src.sh"
+
+    def _run(self, ws: Path, image_id: str) -> str:
+        import subprocess
+
+        bindir = ws.parent / "bin"
+        bindir.mkdir(exist_ok=True)
+        # Stand-in colcon: record that it ran and leave a tree behind.
+        fake = bindir / "colcon"
+        fake.write_text("#!/bin/sh\nmkdir -p build install log\ntouch build/ran\nexit 0\n")
+        fake.chmod(0o755)
+        result = subprocess.run(
+            ["bash", str(self.BUILD_SRC)],
+            env={
+                "PATH": f"{bindir}:/usr/bin:/bin",
+                "colcon_work_dir": str(ws),
+                "colcon_build": "y",
+                "COLCON2DEB_IMAGE_ID": image_id,
+            },
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout
+
+    def test_same_image_keeps_tree(self, tmp_path: Path) -> None:
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        self._run(ws, "sha256:aaa")
+        (ws / "install" / "keep").write_text("x")
+        out = self._run(ws, "sha256:aaa")
+        assert "discarding" not in out
+        assert (ws / "install" / "keep").exists()
+
+    def test_changed_image_discards_tree(self, tmp_path: Path) -> None:
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        self._run(ws, "sha256:aaa")
+        (ws / "install" / "stale").write_text("x")
+        out = self._run(ws, "sha256:bbb")
+        assert "discarding" in out
+        assert not (ws / "install" / "stale").exists()
+        assert (ws / ".colcon2deb-image-id").read_text().strip() == "sha256:bbb"
+
+    def test_tree_without_stamp_is_discarded(self, tmp_path: Path) -> None:
+        """A tree from a colcon2deb that predates the stamp is of unknown origin."""
+        ws = tmp_path / "ws"
+        (ws / "install").mkdir(parents=True)
+        (ws / "install" / "old").write_text("x")
+        out = self._run(ws, "sha256:aaa")
+        assert "discarding" in out
+        assert not (ws / "install" / "old").exists()
