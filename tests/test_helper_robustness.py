@@ -106,3 +106,65 @@ class TestColconTreeImageStamp:
         out = self._run(ws, "sha256:aaa")
         assert "discarding" in out
         assert not (ws / "install" / "old").exists()
+
+
+class TestColconBuildParallelism:
+    """Phase 4 must keep the total compile jobs within parallel_jobs.
+
+    colcon runs --parallel-workers packages at once, and colcon-cmake gives
+    each one make -j<nproc> unless MAKEFLAGS already carries a -j. Without a
+    per-package cap a 32-core host ran up to 32 x 32 compilers and ran out of
+    memory on Autoware.
+    """
+
+    BUILD_SRC = HELPER_DIR / "build-src.sh"
+
+    def _run(self, tmp_path: Path, parallel_jobs: str, makeflags: str | None = None) -> dict:
+        import subprocess
+
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        bindir = tmp_path / "bin"
+        bindir.mkdir()
+        record = tmp_path / "record"
+        fake = bindir / "colcon"
+        fake.write_text(
+            "#!/bin/sh\n"
+            f'echo "args=$*" > {record}\n'
+            f'echo "MAKEFLAGS=$MAKEFLAGS" >> {record}\n'
+            f'echo "CMAKE_BUILD_PARALLEL_LEVEL=$CMAKE_BUILD_PARALLEL_LEVEL" >> {record}\n'
+            "exit 0\n"
+        )
+        fake.chmod(0o755)
+        env = {
+            "PATH": f"{bindir}:/usr/bin:/bin",
+            "colcon_work_dir": str(ws),
+            "colcon_build": "y",
+            "COLCON2DEB_IMAGE_ID": "sha256:aaa",
+            "COLCON2DEB_PARALLEL_JOBS": parallel_jobs,
+        }
+        if makeflags is not None:
+            env["MAKEFLAGS"] = makeflags
+        subprocess.run(["bash", str(self.BUILD_SRC)], env=env, capture_output=True, text=True, check=True)
+        out = {}
+        for line in record.read_text().splitlines():
+            key, _, value = line.partition("=")
+            out[key] = value
+        return out
+
+    def test_budget_split_between_packages_and_jobs(self, tmp_path: Path) -> None:
+        rec = self._run(tmp_path, "16")
+        assert "--parallel-workers 4" in rec["args"]
+        assert rec["MAKEFLAGS"] == "-j4"
+        assert rec["CMAKE_BUILD_PARALLEL_LEVEL"] == "4"
+
+    def test_uneven_budget_never_exceeds_it(self, tmp_path: Path) -> None:
+        rec = self._run(tmp_path, "12")
+        workers = int(rec["args"].split("--parallel-workers ")[1].split()[0])
+        per_pkg = int(rec["MAKEFLAGS"].removeprefix("-j"))
+        assert workers == 3 and per_pkg == 4
+        assert workers * per_pkg <= 12
+
+    def test_caller_makeflags_jobs_kept(self, tmp_path: Path) -> None:
+        rec = self._run(tmp_path, "16", makeflags="-j2 -k")
+        assert rec["MAKEFLAGS"] == "-j2 -k"

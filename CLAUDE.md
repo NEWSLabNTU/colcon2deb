@@ -157,7 +157,7 @@ restores strict phase ordering.
 - **Isolated builds** - Everything runs in Docker containers
 - **Custom install prefix** - Configurable via `install_prefix` in config.yaml
 - **Package suffix support** - Append version suffix to package names via `package_suffix`
-- **Parallel builds** - Configurable via `parallel_jobs` in config.yaml (affects colcon build, debian generation, and package building)
+- **Parallel builds** - Configurable via `parallel_jobs` in config.yaml (affects colcon build, debian generation, and package building). It is a total: both the colcon build and the deb build run about sqrt(N) packages at once with N / that jobs each (MAKEFLAGS in the colcon build)
 - **Vendored rosdeb-bloom** - Modified bloom with install prefix and ament_python fixes
 - **Prerequisite checks** - docker binary + daemon verified before any work; the container verifies the image provides python3/colcon/rosdep/cmake and fails with a hint otherwise
 - **Writable install prefix in-container** - entry.sh hands the (ephemeral) install prefix to the build user, tolerating packages that write into it at build time

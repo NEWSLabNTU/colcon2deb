@@ -34,13 +34,31 @@ if [ "$colcon_build" = y ]; then
         cmake_args="$cmake_args $COLCON2DEB_CMAKE_ARGS"
     fi
 
-    # Determine parallel workers from config or auto-detect
+    # Split the job budget (parallel_jobs, or nproc) between packages and the
+    # compilers inside each, as build_deb.py does for phase 8: about sqrt(N)
+    # packages at once, N / that jobs each. colcon-cmake gives every package
+    # make -j<nproc> unless MAKEFLAGS already has a -j, so --parallel-workers
+    # alone ran up to N x nproc compilers, which ran a 32-core host out of
+    # memory on Autoware. A -j the caller put in MAKEFLAGS is left alone.
     config_parallel="${COLCON2DEB_PARALLEL_JOBS:-0}"
     if [ "$config_parallel" -gt 0 ]; then
-        parallel_workers="$config_parallel"
+        total_parallel="$config_parallel"
     else
-        parallel_workers="$(nproc)"
+        total_parallel="$(nproc)"
     fi
+    parallel_workers=1
+    while [ $(( (parallel_workers + 1) * (parallel_workers + 1) )) -le "$total_parallel" ]; do
+        parallel_workers=$((parallel_workers + 1))
+    done
+    per_pkg_parallel=$(( total_parallel / parallel_workers ))
+    case " ${MAKEFLAGS:-} " in
+        *" -j"*) ;;
+        *)
+            export MAKEFLAGS="-j$per_pkg_parallel${MAKEFLAGS:+ $MAKEFLAGS}"
+            export CMAKE_BUILD_PARALLEL_LEVEL="$per_pkg_parallel"
+            ;;
+    esac
+    echo "Parallelism: $parallel_workers packages x ${MAKEFLAGS} (config: $config_parallel)"
 
     # Build (stdout+stderr captured by run_script tee to phase log)
     colcon build --base-paths src \
