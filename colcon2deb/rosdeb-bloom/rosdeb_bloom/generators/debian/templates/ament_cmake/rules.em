@@ -102,7 +102,15 @@ override_dh_shlibdeps:
 
 override_dh_auto_install:
 	# Source setup script for install environment (preserves package-level paths from local_setup.bash)
+	# A package that returns before any install() rule, as Autoware's CUDA
+	# packages do when CUDA is absent, gets no install make target: package it
+	# empty, which still satisfies the packages that depend on it.
 	source "$(SETUP_SCRIPT)" 2>/dev/null || true && \
 	export CMAKE_PREFIX_PATH="$(PATH_INSTALL):$(PATH_ROS):$$CMAKE_PREFIX_PATH" && \
 	export AMENT_PREFIX_PATH="$(PATH_INSTALL):$(PATH_ROS):$$AMENT_PREFIX_PATH" && \
-	DESTDIR=$(CURDIR)/debian/@(Package) $(MAKE) -C .obj-$(DEB_HOST_GNU_TYPE) install
+	if grep -q '^install:' .obj-$(DEB_HOST_GNU_TYPE)/Makefile; then \
+		DESTDIR=$(CURDIR)/debian/@(Package) $(MAKE) -C .obj-$(DEB_HOST_GNU_TYPE) install; \
+	else \
+		echo "no install target: the package declares nothing to install; packaging it empty"; \
+		DESTDIR=$(CURDIR)/debian/@(Package) cmake --install .obj-$(DEB_HOST_GNU_TYPE); \
+	fi

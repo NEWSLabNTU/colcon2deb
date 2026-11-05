@@ -221,6 +221,12 @@ The `colcon2deb/rosdeb-bloom/` directory contains an embedded modified bloom pac
   - Creates `hook/pythonpath.{sh,dsv}` for PYTHONPATH setup
   - Creates `hook/ament_prefix_path.{sh,dsv}` for AMENT_PREFIX_PATH
   - Creates `local_setup.{bash,sh,zsh}` for environment sourcing
+- `ament_cmake/rules.em` installs with `make install` when the build tree has
+  an `install` target and `cmake --install` when it has none. A package that
+  returns before any `install()` rule (Autoware's CUDA packages without CUDA)
+  gets no such target; it is packaged empty, which still satisfies its
+  dependents. `tests/test_rules_install.py` runs the real recipe. Overrides in a
+  user's `debian-overrides/` are frozen copies and keep their old line.
 
 The package is pip-installed from `/rosdeb-bloom` inside the container by `entry.sh`.
 
