@@ -90,11 +90,10 @@ fi
 
 if [ ${#pip_packages[@]} -gt 0 ]; then
     echo "echo \"Installing ${#pip_packages[@]} pip packages...\" >&2"
-    echo -n "pip install -U"
-    for pkg in "${pip_packages[@]}"; do
-        echo -n " $pkg"
-    done
-    echo ""
+    # Ubuntu 24.04 marks the system Python externally managed (PEP 668), and a
+    # plain pip install refuses; fall back as entry.sh does.
+    echo "pip install -U ${pip_packages[*]} \\"
+    echo "    || pip install -U --break-system-packages ${pip_packages[*]}"
     echo ""
 fi
 

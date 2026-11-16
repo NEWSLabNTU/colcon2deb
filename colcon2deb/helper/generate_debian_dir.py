@@ -59,6 +59,17 @@ def get_env_str(name: str, default: str | None = None) -> str:
     return value
 
 
+def ubuntu_codename() -> str:
+    """The container's Ubuntu codename (jammy, noble), which bloom resolves rosdep keys for."""
+    try:
+        for line in Path("/etc/os-release").read_text().splitlines():
+            if line.startswith("VERSION_CODENAME="):
+                return line.split("=", 1)[1].strip().strip('"') or "jammy"
+    except OSError:
+        pass
+    return "jammy"
+
+
 def get_package_list(colcon_work_dir: Path) -> list[tuple[str, Path]]:
     """Get list of packages from colcon."""
     result = subprocess.run(
@@ -199,6 +210,7 @@ def copy_or_create_debian_dir(
             bloom_result: Any = generate_debian(  # pyright: ignore[reportUnknownVariableType]
                 package_path=pkg_dir,
                 ros_distro=ros_distro,
+                os_version=ubuntu_codename(),
                 install_prefix=ros_install_prefix,
                 peer_packages=peer_packages,
                 package_suffix=package_suffix,
