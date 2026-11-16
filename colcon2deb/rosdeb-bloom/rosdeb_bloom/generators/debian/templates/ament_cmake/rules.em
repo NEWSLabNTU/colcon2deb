@@ -37,8 +37,11 @@ DEB_HOST_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
 # Colcon workspace install path (set by colcon2deb, defaults to empty)
 COLCON_INSTALL_PATH ?= @(ColconInstallPath)
 
-# ROS base path (where ROS2 is installed, e.g. /opt/ros/humble)
-ROS_BASE_PATH ?= /opt/ros/humble
+# ROS base path: the build's own distro (/opt/ros/humble, /opt/ros/jazzy).
+# It must not be a fixed name. The exports below replace AMENT_PREFIX_PATH,
+# so with another distro's path no ROS package is found at all, and every
+# message package fails to configure ("No 'rosidl_typesupport_c' found").
+ROS_BASE_PATH ?= /opt/ros/@(Rosdistro)
 
 # Build combined prefix paths as a proper CMake list (semicolon-separated)
 # Note: We construct this path carefully to work with cmake's list format
