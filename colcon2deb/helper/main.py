@@ -275,6 +275,7 @@ def main() -> int:
     ui.add_phase("phase6", "Phase 6: Creating package list")
     ui.add_phase("phase7", "Phase 7: Generating Debian metadata")
     ui.add_phase("phase8", "Phase 8: Building Debian packages")
+    ui.add_phase("phase9", "Phase 9: Checking links and build paths")
 
     # Resolve paths
     script_dir = Path(__file__).resolve().parent
@@ -283,7 +284,7 @@ def main() -> int:
 
     # Initialize event emitter
     events.init(output_dir)
-    events.build_start(total_phases=8)
+    events.build_start(total_phases=9)
 
     # Get ROS configuration from environment
     ros_distro = os.environ.get("ROS_DISTRO", "humble")
@@ -500,6 +501,14 @@ def main() -> int:
             "warning: colcon build succeeded but install/setup.bash is missing",
             file=sys.stderr,
         )
+
+    # Phase 9: the built packages link, and carry no path of the build container
+    if last_failing_phase is None and not args.skip_build_deb:
+        if env.get("COLCON2DEB_LINK_CHECK", "warn") == "off":
+            ui.skip_phase("phase9")
+            events.phase_skip(9)
+        else:
+            run_phase(9, "Checking links and build paths", "link_check.py", is_python=True)
 
     events.build_complete(success=(last_failing_phase is None))
 

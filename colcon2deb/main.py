@@ -216,6 +216,7 @@ def run_container_with_tui(docker_cmd: list[str], container_name: str, output_di
         ui.add_phase("phase6", "Phase 6: Creating package list")
         ui.add_phase("phase7", "Phase 7: Generating Debian metadata")
         ui.add_phase("phase8", "Phase 8: Building Debian packages")
+        ui.add_phase("phase9", "Phase 9: Checking links and build paths")
 
         event_file = output_dir / EVENT_FILE
         stop_event = threading.Event()
@@ -798,6 +799,8 @@ def main():
         "-e",
         f"COLCON2DEB_SKIP_TESTS={'1' if cfg.skip_tests else '0'}",
         "-e",
+        f"COLCON2DEB_LINK_CHECK={cfg.link_check}",
+        "-e",
         f"COLCON2DEB_VERSION={__version__}",
         "-e",
         f"COLCON2DEB_IMAGE_ID={docker_image_id}",
@@ -814,6 +817,13 @@ def main():
         "-v",
         f"{rosdeb_bloom_dir}:/rosdeb-bloom:ro",
     ]
+    if cfg.link_check_allow is not None:
+        docker_cmd += [
+            "-v",
+            f"{cfg.link_check_allow}:/link-check-allow.yaml:ro",
+            "-e",
+            "COLCON2DEB_LINK_CHECK_ALLOW=/link-check-allow.yaml",
+        ]
 
     docker_cmd.extend(
         [

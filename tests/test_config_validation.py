@@ -237,3 +237,34 @@ class TestDockerPrereqCheck:
 
         self._with_fake_docker(tmp_path, monkeypatch, exit_code=0)
         assert check_docker_prereqs() is None
+
+
+class TestLinkCheckConfig:
+    def _with(self, **build: object) -> dict:
+        return {**MINIMAL, "build": build}
+
+    def test_default_is_warn_without_allowlist(self) -> None:
+        cfg = _validate(MINIMAL)
+        assert cfg.link_check == "warn"
+        assert cfg.link_check_allow is None
+
+    @pytest.mark.parametrize("mode", ["error", "warn", "off"])
+    def test_modes(self, mode: str) -> None:
+        assert _validate(self._with(link_check=mode)).link_check == mode
+
+    def test_bad_mode(self) -> None:
+        with pytest.raises(ConfigError, match="link_check must be error, warn or off"):
+            _validate(self._with(link_check="strict"))
+
+    def test_allowlist_resolved_against_config_dir(self, tmp_path: Path) -> None:
+        (tmp_path / "allow.yaml").write_text("[]\n")
+        cfg = _validate(self._with(link_check_allow="allow.yaml"), tmp_path)
+        assert cfg.link_check_allow == (tmp_path / "allow.yaml").resolve()
+
+    def test_missing_allowlist(self, tmp_path: Path) -> None:
+        with pytest.raises(ConfigError, match="does not exist"):
+            _validate(self._with(link_check_allow="nope.yaml"), tmp_path)
+
+    def test_keys_not_reported_unknown(self) -> None:
+        cfg = _validate(self._with(link_check="off"))
+        assert not any("link_check" in w for w in cfg.warnings)

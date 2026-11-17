@@ -27,6 +27,8 @@ _BUILD_KEYS = {
     "use_nvidia_runtime",
     "pipeline",
     "skip_tests",
+    "link_check",
+    "link_check_allow",
 }
 
 
@@ -52,6 +54,8 @@ class BuildConfig:
     use_nvidia_runtime: bool
     pipeline: bool
     skip_tests: bool
+    link_check: str = "warn"
+    link_check_allow: Path | None = None
     warnings: list[str] = field(default_factory=lambda: [])
 
 
@@ -190,6 +194,18 @@ def validate_config(config: Any, config_dir: Path) -> BuildConfig:
     if not isinstance(skip_tests, bool):
         raise ConfigError(f"build.skip_tests must be true or false, got {skip_tests!r}")
 
+    # Link check after the packages are built (phase 9): error | warn | off
+    link_check = build.get("link_check", "warn")
+    if link_check not in ("error", "warn", "off"):
+        raise ConfigError(f"build.link_check must be error, warn or off, got {link_check!r}")
+    link_check_allow = build.get("link_check_allow")
+    if link_check_allow is not None:
+        if not isinstance(link_check_allow, str):
+            raise ConfigError(f"build.link_check_allow must be a path, got {link_check_allow!r}")
+        link_check_allow = (config_dir / link_check_allow).resolve()
+        if not link_check_allow.is_file():
+            raise ConfigError(f"build.link_check_allow: {link_check_allow} does not exist")
+
     # Warn about unknown keys — silently ignored settings mislead users
     for key in config:
         if key not in _TOP_LEVEL_KEYS:
@@ -218,5 +234,7 @@ def validate_config(config: Any, config_dir: Path) -> BuildConfig:
         use_nvidia_runtime=use_nvidia_runtime,
         pipeline=pipeline,
         skip_tests=skip_tests,
+        link_check=link_check,
+        link_check_allow=link_check_allow,
         warnings=warnings,
     )

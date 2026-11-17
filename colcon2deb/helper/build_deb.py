@@ -288,6 +288,19 @@ def build_single_package(
         deb_file = find_deb_file(parent_dir, ros_distro, pkg_name_dashed, package_suffix)
 
         if deb_file:
+            # The dh build resolved dependencies from the colcon install; rewrite the
+            # paths it recorded in CMake, pkg-config and dsv files to the install prefix.
+            from relocate_deb import relocate_deb
+
+            relocated = relocate_deb(deb_file, colcon_install_path, ros_install_prefix)
+            if relocated:
+                with open(log_file, "a") as log_fh:
+                    log_fh.write(
+                        f"colcon2deb: relocated {len(relocated)} file(s) from "
+                        f"{colcon_install_path}/<pkg> to {ros_install_prefix}:\n"
+                        + "".join(f"  {p}\n" for p in relocated)
+                    )
+
             dest_deb = release_dir / deb_file.name
             shutil.move(str(deb_file), str(dest_deb))
 
